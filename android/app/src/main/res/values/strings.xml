@@ -96,4 +96,12 @@
     <string name="download_done_toast">تم تجهيز الملف للرفع: %1$s ✅</string>
     <string name="download_failed">فشل التحميل من الرابط</string>
     <string name="stage_retry_hint">💡 حل بديل مؤكد: انسخ الملف إلى تطبيق «الملفات» على هاتفك (مجلد التنزيلات) ثم اختره من هناك، أو استخدم «رفع من رابط».</string>
+
+    <string name="update_sheet_title">✨ تحديث جديد متاح</string>
+    <string name="update_new_version">الإصدار الجديد: %1$s</string>
+    <string name="update_current_version">إصدارك الحالي: %1$s</string>
+    <string name="update_btn_install">⬇ تحديث الآن</string>
+    <string name="update_btn_cancel">إلغاء ✖</string>
+    <string name="update_download_failed">فشل تحميل التحديث: %1$s</string>
+    <string name="update_ready_toast">تم تحميل التحديث ✔ أكمل التثبيت من النافذة التالية</string>
 </resources>

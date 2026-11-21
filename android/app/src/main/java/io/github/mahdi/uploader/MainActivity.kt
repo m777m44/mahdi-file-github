@@ -318,6 +318,7 @@ class MainActivity : AppCompatActivity() {
             api = GitHubClient(token)
             showMain()
             loadRepos()
+            checkForUpdate()
         } else {
             showLogin()
         }
@@ -430,6 +431,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.LENGTH_SHORT).show()
                 showMain()
                 loadRepos()
+                checkForUpdate()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -486,6 +488,7 @@ class MainActivity : AppCompatActivity() {
                                 Toast.LENGTH_SHORT).show()
                             showMain()
                             loadRepos()
+                            checkForUpdate()
                             return@launch
                         }
                         error == "authorization_pending" -> continue
@@ -710,6 +713,136 @@ class MainActivity : AppCompatActivity() {
     private fun updateZipRowVisibility(sheetView: View) {
         sheetView.findViewById<View>(R.id.zipModeRow).isVisible =
             pendingDocs.any { it.kind == Kind.ZIP }
+    }
+
+    // ------------------------------------------------------------ in-app update
+
+    private val UPDATE_REPO = "m777m44/mahdi-file-github"
+
+    private var updateSheetDialog: BottomSheetDialog? = null
+
+    private fun checkForUpdate() {
+        val client = api ?: GitHubClient("")
+        scope.launch {
+            val info = try {
+                withContext(Dispatchers.IO) { fetchLatestUpdate(client) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (info != null) showUpdateSheet(info)
+        }
+    }
+
+    private fun fetchLatestUpdate(client: GitHubClient): Triple<String, String, String>? {
+        val rel = client.latestRelease(UPDATE_REPO) ?: return null
+        val tag = rel.optString("tag_name").removePrefix("v").removePrefix("V").trim()
+        if (!isNewerVersion(tag, BuildConfig.VERSION_NAME)) return null
+        val assets = rel.optJSONArray("assets") ?: return null
+        for (i in 0 until assets.length()) {
+            val asset = assets.getJSONObject(i)
+            if (asset.optString("name").endsWith(".apk", ignoreCase = true)) {
+                val url = asset.optString("browser_download_url")
+                if (url.isNotEmpty()) return Triple(tag, url, asset.optString("name"))
+            }
+        }
+        return null
+    }
+
+    private fun isNewerVersion(remote: String, current: String): Boolean {
+        fun parts(v: String) = v.split('.').map { it.trim().filter(Char::isDigit).toIntOrNull() ?: 0 }
+        val a = parts(remote)
+        val b = parts(current)
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val x = a.getOrElse(i) { 0 }
+            val y = b.getOrElse(i) { 0 }
+            if (x != y) return x > y
+        }
+        return false
+    }
+
+    private fun showUpdateSheet(info: Triple<String, String, String>) {
+        if (updateSheetDialog?.isShowing == true) return
+        val view = LayoutInflater.from(this).inflate(R.layout.sheet_update, null)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(view)
+        updateSheetDialog = dialog
+        view.findViewById<TextView>(R.id.updateVersions).text =
+            getString(R.string.update_new_version, info.first) + "\n" +
+            getString(R.string.update_current_version, BuildConfig.VERSION_NAME)
+        val btnNow = view.findViewById<MaterialButton>(R.id.btnUpdateNow)
+        val progress = view.findViewById<LinearProgressIndicator>(R.id.updateProgress)
+        view.findViewById<MaterialButton>(R.id.btnUpdateCancel).setOnClickListener { dialog.dismiss() }
+        btnNow.setOnClickListener {
+            btnNow.isEnabled = false
+            progress.isVisible = true
+            downloadUpdate(info.second, info.third) {
+                btnNow.isEnabled = true
+                progress.isVisible = false
+            }
+        }
+        dialog.setOnDismissListener { updateSheetDialog = null }
+        dialog.show()
+    }
+
+    private fun downloadUpdate(url: String, fileName: String, onDone: () -> Unit) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val http = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        throw Exception(resp.code.toString())
+                    }
+                    val target = File(getExternalFilesDir(null), "updates")
+                        .apply { mkdirs() }
+                        .let { File(it, fileName.ifBlank { "update.apk" }) }
+                    resp.body?.byteStream()?.use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    } ?: throw Exception("empty body")
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity,
+                            getString(R.string.update_ready_toast),
+                            Toast.LENGTH_SHORT).show()
+                        installUpdate(target)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity,
+                        getString(R.string.update_download_failed, e.message ?: ""),
+                        Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                runOnUiThread { onDone() }
+            }
+        }
+    }
+
+    private fun installUpdate(apk: File) {
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            this, "$packageName.fileprovider", apk,
+        )
+        val intent = Intent(Intent.ACTION_INSTALL_PACKAGE)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                startActivity(
+                    Intent(Intent.ACTION_VIEW)
+                        .setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                )
+            } catch (_: Exception) {
+            }
+        }
     }
 
     private fun refreshPickedSummary() {

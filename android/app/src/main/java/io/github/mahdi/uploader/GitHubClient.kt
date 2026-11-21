@@ -118,6 +118,15 @@ class GitHubClient(private val token: String) {
 
     fun getRepo(fullName: String): JSONObject = json("GET", "/repos/$fullName")
 
+    fun latestRelease(fullName: String): JSONObject? {
+        return try {
+            val (_, text) = call("GET", api("/repos/$fullName/releases/latest"), useAuth = false)
+            JSONObject(text)
+        } catch (e: GitHubException) {
+            if (e.code == 404) null else throw e
+        }
+    }
+
     fun getRef(fullName: String, branch: String): JSONObject =
         json("GET", "/repos/$fullName/git/ref/heads/$branch")
 
