@@ -1,0 +1,164 @@
+package io.github.mahdi.uploader
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
+
+class GitHubClient(private val token: String) {
+
+    class GitHubException(val code: Int, message: String) : Exception(message)
+
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(300, TimeUnit.SECONDS)
+        .writeTimeout(300, TimeUnit.SECONDS)
+        .build()
+
+    private fun call(
+        method: String,
+        url: String,
+        jsonBody: String? = null,
+        useAuth: Boolean = true,
+    ): Pair<Int, String> {
+        val builder = Request.Builder().url(url)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+        if (useAuth) builder.header("Authorization", "Bearer $token")
+        when {
+            jsonBody != null -> builder.method(
+                method,
+                jsonBody.toRequestBody("application/json".toMediaType())
+            )
+            method != "GET" && method != "HEAD" -> builder.method(method, null)
+        }
+        http.newCall(builder.build()).execute().use { resp ->
+            val bodyStr = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                val msg = try {
+                    JSONObject(bodyStr).optString("message")
+                } catch (_: Exception) {
+                    bodyStr.take(200).ifEmpty { resp.message }
+                }
+                throw GitHubException(resp.code, "GitHub (${resp.code}): $msg")
+            }
+            return Pair(resp.code, bodyStr)
+        }
+    }
+
+    private fun api(path: String) = "https://api.github.com$path"
+
+    private fun json(method: String, path: String, body: JSONObject? = null): JSONObject {
+        val (_, text) = call(method, api(path), body?.toString())
+        return JSONObject(text.ifEmpty { "{}" })
+    }
+
+    // ------------------------------------------------------------ auth
+
+    fun requestDeviceCode(clientId: String): JSONObject {
+        val body = JSONObject().put("client_id", clientId)
+        val (_, text) = call(
+            "POST", "https://github.com/login/device/code", body.toString(), useAuth = false,
+        )
+        return JSONObject(text)
+    }
+
+    fun pollForToken(clientId: String, deviceCode: String): JSONObject {
+        val body = JSONObject()
+            .put("client_id", clientId)
+            .put("device_code", deviceCode)
+            .put("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+        val (_, text) = call(
+            "POST", "https://github.com/login/oauth/access_token", body.toString(), useAuth = false,
+        )
+        return JSONObject(text)
+    }
+
+    fun getUser(): JSONObject {
+        val (_, text) = call("GET", api("/user"))
+        return JSONObject(text)
+    }
+
+    // ------------------------------------------------------------ repos
+
+    suspend fun listRepos(): JSONArray = withContext(Dispatchers.IO) {
+        val all = JSONArray()
+        var page = 1
+        while (true) {
+            val (_, text) = call(
+                "GET",
+                api("/user/repos?affiliation=owner,collaborator,organization_member&sort=updated&per_page=100&page=$page"),
+            )
+            val batch = JSONArray(text)
+            for (i in 0 until batch.length()) all.put(batch.getJSONObject(i))
+            if (batch.length() < 100) break
+            page++
+        }
+        all
+    }
+
+    fun createRepo(name: String, private: Boolean, description: String): JSONObject {
+        val body = JSONObject()
+            .put("name", name)
+            .put("private", private)
+            .put("description", description)
+            .put("auto_init", true)
+        return json("POST", "/user/repos", body)
+    }
+
+    fun getRepo(fullName: String): JSONObject = json("GET", "/repos/$fullName")
+
+    fun getRef(fullName: String, branch: String): JSONObject =
+        json("GET", "/repos/$fullName/git/ref/heads/$branch")
+
+    fun getCommit(fullName: String, sha: String): JSONObject =
+        json("GET", "/repos/$fullName/git/commits/$sha")
+
+    fun createBlob(fullName: String, content: ByteArray): JSONObject {
+        val b64 = android.util.Base64.encodeToString(content, android.util.Base64.NO_WRAP)
+        val body = JSONObject().put("content", b64).put("encoding", "base64")
+        return json("POST", "/repos/$fullName/git/blobs", body)
+    }
+
+    fun createTree(fullName: String, baseTree: String, tree: JSONArray): JSONObject =
+        json(
+            "POST", "/repos/$fullName/git/trees",
+            JSONObject().put("base_tree", baseTree).put("tree", tree),
+        )
+
+    fun createCommit(fullName: String, message: String, treeSha: String, parentShas: List<String>): JSONObject =
+        json(
+            "POST", "/repos/$fullName/git/commits",
+            JSONObject().put("message", message).put("tree", treeSha)
+                .put("parents", JSONArray(parentShas)),
+        )
+
+    fun updateRef(fullName: String, branch: String, sha: String) {
+        json(
+            "PATCH", "/repos/$fullName/git/refs/heads/$branch",
+            JSONObject().put("sha", sha).put("force", false),
+        )
+    }
+
+    fun createRef(fullName: String, branch: String, sha: String) {
+        json(
+            "POST", "/repos/$fullName/git/refs",
+            JSONObject().put("ref", "refs/heads/$branch").put("sha", sha),
+        )
+    }
+
+    fun putFile(fullName: String, path: String, content: String, message: String, branch: String): JSONObject {
+        val b64 = android.util.Base64.encodeToString(
+            content.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP,
+        )
+        return json(
+            "PUT", "/repos/$fullName/contents/$path",
+            JSONObject().put("message", message).put("content", b64).put("branch", branch),
+        )
+    }
+}

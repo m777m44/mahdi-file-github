@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GitHub Uploader</string>
+
+    <!-- Login -->
+    <string name="login_title">الرفع إلى حسابك على GitHub</string>
+    <string name="login_subtitle">تسجيل دخول رسمي عبر GitHub — ارفع أي ملفات 📄 أو مجلدات 📂 أو أرشيف zip 🗜 إلى مستودعاتك من هاتفك</string>
+    <string name="btn_login_github">🔐 تسجيل الدخول عبر GitHub</string>
+    <string name="or">— أو —</string>
+    <string name="pat_hint">الصق Personal Access Token هنا</string>
+    <string name="btn_login_pat">دخول بالتوكن</string>
+    <string name="device_code_title">أدخل هذا الرمز في المتصفح</string>
+    <string name="btn_open_browser">افتح github.com/login/device</string>
+    <string name="enter_code_at">انتظر… بعد إدخال الرمز في المتصفح سيتم الدخول تلقائياً</string>
+    <string name="requesting_code">جارٍ طلب الرمز من GitHub…</string>
+    <string name="checking_token">جارٍ التحقق من التوكن…</string>
+    <string name="login_failed">فشل تسجيل الدخول:</string>
+    <string name="welcome">مرحباً %1$s 👋</string>
+    <string name="enter_pat">الصق التوكن أولاً</string>
+
+    <!-- Settings -->
+    <string name="settings_title">الإعداد — Client ID</string>
+    <string name="settings_hint">للدخول عبر GitHub: أنشئ OAuth App من حسابك (Settings ← Developer settings ← OAuth Apps) بدون callback، وظعّل خيار Enable Device Flow، ثم الصق Client ID هنا.</string>
+    <string name="client_id_hint">Client ID</string>
+    <string name="save">حفظ</string>
+
+    <!-- Main -->
+    <string name="your_repos">مستودعاتك ومشاريعك</string>
+    <string name="search_hint">🔍 ابحث باسم المستودع…</string>
+    <string name="btn_create_repo">➕ مستودع جديد</string>
+    <string name="load_failed">تعذر تحميل المستودعات:</string>
+    <string name="no_repos">لا توجد مستودعات بعد</string>
+
+    <!-- Create repo -->
+    <string name="create_repo_title">إنشاء مستودع جديد</string>
+    <string name="repo_name_hint">اسم المستودع بالإنجليزية مثل my-project</string>
+    <string name="repo_desc_hint">وصف (اختياري)</string>
+    <string name="repo_private">مستودع خاص 🔒</string>
+    <string name="create">إنشاء</string>
+    <string name="repo_created">تم إنشاء: %1$s ✅</string>
+    <string name="repo_create_failed">فشل إنشاء المستودع:</string>
+
+    <!-- Upload sheet -->
+    <string name="upload_title">⬆ رفع ملفات إلى مستودع</string>
+    <string name="upload_repo_hint">المستودع owner/name</string>
+    <string name="branch_label">الفرع Branch (فارغ = الافتراضي)</string>
+    <string name="branch_hint_custom">مثال: main أو feature/new</string>
+    <string name="prefix_label">مجلد داخل المستودع (اختياري)</string>
+    <string name="prefix_hint">مثل docs أو projects/app</string>
+    <string name="message_label">رسالة الالتزام (اختياري)</string>
+    <string name="btn_pick_files">📄 ملفات</string>
+    <string name="btn_pick_folder">📂 مجلد كامل</string>
+    <string name="btn_pick_zip">🗜 ملف zip</string>
+    <string name="zip_extract">فك الضغط ورفع المحتويات</string>
+    <string name="zip_asis">رفع ملف الـ zip كما هو</string>
+    <string name="zip_modes_label">محتوى الـ zip:</string>
+    <string name="btn_upload">⬆ ارفع الآن</string>
+    <string name="nothing_picked">لم تختر أي ملفات بعد — استخدم الأزرار أعلاه</string>
+    <string name="picked_summary">%1$d عنصر محدد:\n%2$s\nالمجموع: %3$s</string>
+    <string name="pick_repo_first">اختر أو اكتب اسم المستودع أولاً</string>
+    <string name="pick_files_first">لم يتم اختيار أي ملفات 📂</string>
+    <string name="uploading_current">جارٍ: %1$s</string>
+    <string name="upload_done">✅ تم رفع %1$d ملف إلى %2$s (الفرع: %3$s)</string>
+    <string name="commits_count">عدد الالتزامات: %1$d</string>
+    <string name="failed_files">⚠ فشل رفع %1$d ملف:</string>
+    <string name="upload_result_title">نتيجة الرفع</string>
+    <string name="upload_failed_title">فشل الرفع</string>
+    <string name="open_repo">افتتح المستودع في المتصفح</string>
+    <string name="close">إغلاق</string>
+    <string name="btn_pick_upload">اختيار للرفع ⬆</string>
+    <string name="default_branch_hint">الفرع الافتراضي: %1$s</string>
+</resources>
