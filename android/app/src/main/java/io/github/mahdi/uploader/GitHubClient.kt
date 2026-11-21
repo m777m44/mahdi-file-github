@@ -15,13 +15,48 @@ import java.util.concurrent.TimeUnit
 
 class GitHubClient(private val token: String) {
 
-    class GitHubException(val code: Int, message: String) : Exception(message)
+    class GitHubException(
+        val code: Int,
+        message: String,
+        val retryAfterSeconds: Long? = null,
+    ) : Exception(message)
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(300, TimeUnit.SECONDS)
         .writeTimeout(300, TimeUnit.SECONDS)
         .build()
+
+    companion object {
+        private const val PACE_MS = 200L
+        private val RATE_LIMIT_WAITS_MS =
+            longArrayOf(60_000L, 90_000L, 150_000L, 240_000L, 420_000L, 600_000L)
+    }
+
+    private val paceLock = Any()
+    private var lastCallAt = 0L
+
+    private fun pace() {
+        synchronized(paceLock) {
+            val now = System.currentTimeMillis()
+            val next = lastCallAt + PACE_MS
+            if (next > now) {
+                try {
+                    Thread.sleep(next - now)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+                lastCallAt = System.currentTimeMillis()
+            } else {
+                lastCallAt = now
+            }
+        }
+    }
+
+    private fun isRateLimitResponse(msg: String): Boolean =
+        msg.contains("rate limit", ignoreCase = true) ||
+            msg.contains("abuse", ignoreCase = true) ||
+            msg.contains("secondary", ignoreCase = true)
 
     private fun call(
         method: String,
@@ -30,29 +65,46 @@ class GitHubClient(private val token: String) {
         useAuth: Boolean = true,
         rawBody: RequestBody? = null,
     ): Pair<Int, String> {
-        val builder = Request.Builder().url(url)
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-        if (useAuth) builder.header("Authorization", "Bearer $token")
-        when {
-            rawBody != null -> builder.method(method, rawBody)
-            jsonBody != null -> builder.method(
-                method,
-                jsonBody.toRequestBody("application/json".toMediaType())
-            )
-            method != "GET" && method != "HEAD" -> builder.method(method, null)
-        }
-        http.newCall(builder.build()).execute().use { resp ->
+        var attempt = 0
+        while (true) {
+            pace()
+            val builder = Request.Builder().url(url)
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+            if (useAuth) builder.header("Authorization", "Bearer $token")
+            when {
+                rawBody != null -> builder.method(method, rawBody)
+                jsonBody != null -> builder.method(
+                    method,
+                    jsonBody.toRequestBody("application/json".toMediaType())
+                )
+                method != "GET" && method != "HEAD" -> builder.method(method, null)
+            }
+
+            val resp = http.newCall(builder.build()).execute()
+            val code = resp.code
+            val retryAfter = resp.header("Retry-After")?.toLongOrNull()
             val bodyStr = resp.body?.string().orEmpty()
+            resp.close()
+
             if (!resp.isSuccessful) {
                 val msg = try {
                     JSONObject(bodyStr).optString("message")
                 } catch (_: Exception) {
                     bodyStr.take(200).ifEmpty { resp.message }
                 }
-                throw GitHubException(resp.code, "GitHub (${resp.code}): $msg")
+                if (isRateLimitResponse(msg) && (code == 429 || code == 403) &&
+                    attempt < RATE_LIMIT_WAITS_MS.size
+                ) {
+                    val waitSeconds = retryAfter?.takeIf { it > 0 }
+                    val waitMs = waitSeconds?.times(1000) ?: RATE_LIMIT_WAITS_MS[attempt]
+                    Thread.sleep(waitMs)
+                    attempt++
+                    continue
+                }
+                throw GitHubException(code, "GitHub ($code): $msg", retryAfter)
             }
-            return Pair(resp.code, bodyStr)
+            return Pair(code, bodyStr)
         }
     }
 
