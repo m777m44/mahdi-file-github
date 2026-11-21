@@ -127,6 +127,16 @@ class GitHubClient(private val token: String) {
         }
     }
 
+    fun listRepoDirectory(fullName: String, dir: String, ref: String?): JSONArray? {
+        val q = if (ref.isNullOrEmpty()) "" else "?ref=" + java.net.URLEncoder.encode(ref, "UTF-8")
+        return try {
+            val (_, text) = call("GET", api("/repos/$fullName/contents/$dir$q"), useAuth = false)
+            JSONArray(text)
+        } catch (e: GitHubException) {
+            if (e.code == 404) null else throw e
+        }
+    }
+
     fun getRef(fullName: String, branch: String): JSONObject =
         json("GET", "/repos/$fullName/git/ref/heads/$branch")
 

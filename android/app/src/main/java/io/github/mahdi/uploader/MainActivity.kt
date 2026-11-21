@@ -718,6 +718,7 @@ class MainActivity : AppCompatActivity() {
     // ------------------------------------------------------------ in-app update
 
     private val UPDATE_REPO = "m777m44/mahdi-file-github"
+    private val UPDATE_BRANCH = "vibe/github-uploader-553067"
 
     private var updateSheetDialog: BottomSheetDialog? = null
 
@@ -736,16 +737,47 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fetchLatestUpdate(client: GitHubClient): Triple<String, String, String>? {
-        val rel = client.latestRelease(UPDATE_REPO) ?: return null
-        val tag = rel.optString("tag_name").removePrefix("v").removePrefix("V").trim()
-        if (!isNewerVersion(tag, BuildConfig.VERSION_NAME)) return null
-        val assets = rel.optJSONArray("assets") ?: return null
-        for (i in 0 until assets.length()) {
-            val asset = assets.getJSONObject(i)
-            if (asset.optString("name").endsWith(".apk", ignoreCase = true)) {
-                val url = asset.optString("browser_download_url")
-                if (url.isNotEmpty()) return Triple(tag, url, asset.optString("name"))
+        try {
+            val rel = client.latestRelease(UPDATE_REPO)
+            if (rel != null) {
+                val tag = rel.optString("tag_name").removePrefix("v").removePrefix("V").trim()
+                if (isNewerVersion(tag, BuildConfig.VERSION_NAME)) {
+                    val assets = rel.optJSONArray("assets")
+                    if (assets != null) {
+                        for (i in 0 until assets.length()) {
+                            val asset = assets.getJSONObject(i)
+                            if (asset.optString("name").endsWith(".apk", ignoreCase = true)) {
+                                val url = asset.optString("browser_download_url")
+                                if (url.isNotEmpty()) return Triple(tag, url, asset.optString("name"))
+                            }
+                        }
+                    }
+                }
             }
+        } catch (_: Exception) {
+        }
+
+        val apkDir = client.listRepoDirectory(UPDATE_REPO, "apk", UPDATE_BRANCH)
+            ?: client.listRepoDirectory(UPDATE_REPO, "apk", null)
+            ?: return null
+        var version: String? = null
+        var url: String? = null
+        for (i in 0 until apkDir.length()) {
+            val file = apkDir.getJSONObject(i)
+            val name = file.optString("name")
+            if (!name.endsWith(".apk", ignoreCase = true)) continue
+            val v = Regex("[vV](\\d+(?:\\.\\d+)*)").find(name)?.groupValues?.get(1) ?: continue
+            val dl = file.optString("download_url")
+            if (dl.isEmpty()) continue
+            if (isNewerVersion(v, BuildConfig.VERSION_NAME) &&
+                (version == null || isNewerVersion(v, version))
+            ) {
+                version = v
+                url = dl
+            }
+        }
+        if (version != null && url != null) {
+            return Triple(version, url, "GitHubUploader-v$version.apk")
         }
         return null
     }
