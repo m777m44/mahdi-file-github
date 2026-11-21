@@ -823,13 +823,13 @@ class MainActivity : AppCompatActivity() {
                             Kind.FILE -> {
                                 val path = if (prefix.isEmpty()) doc.relPath else "${prefix}/${doc.relPath}"
                                 val f = doc.stagedFile
-                                items.add(UploadEngine.Item(path, f.length()) { UploadEngine.readBytesFile(f) })
+                                items.add(UploadEngine.Item(path, f.length(), f))
                             }
                             Kind.ZIP -> {
                                 if (zipAsIs) {
                                     val path = if (prefix.isEmpty()) doc.relPath else "${prefix}/${doc.relPath}"
                                     val f = doc.stagedFile
-                                    items.add(UploadEngine.Item(path, f.length()) { UploadEngine.readBytesFile(f) })
+                                    items.add(UploadEngine.Item(path, f.length(), f))
                                 } else {
                                     val workDir = File(dirStaging(), "zipwork_${System.nanoTime()}").apply { mkdirs() }
                                     val extracted = UploadEngine.extractZipFile(
@@ -839,7 +839,7 @@ class MainActivity : AppCompatActivity() {
                                         items.add(UploadEngine.Item(
                                             if (prefix.isEmpty()) item.path else "${prefix}/${item.path}",
                                             item.size,
-                                            item.read,
+                                            item.file,
                                         ))
                                     }
                                 }
@@ -879,10 +879,10 @@ class MainActivity : AppCompatActivity() {
                     loadRepos()
                 } catch (e: CancellationException) {
                     throw e
-                } catch (e: Exception) {
+                } catch (t: Throwable) {
                     MaterialAlertDialogBuilder(this@MainActivity)
                         .setTitle(getString(R.string.upload_failed_title))
-                        .setMessage(e.message ?: "")
+                        .setMessage(t.message ?: t.javaClass.simpleName)
                         .setPositiveButton(getString(R.string.close), null)
                         .show()
                 } finally {

@@ -13,7 +13,7 @@ object UploadEngine {
     const val HARD_LIMIT = 100L * 1024 * 1024      // GitHub hard limit per file
     private const val SAFE_LIMIT = 90L * 1024 * 1024
 
-    class Item(val path: String, val size: Long, val read: () -> ByteArray)
+    class Item(val path: String, val size: Long, val file: File)
 
     class Result(
         val uploaded: List<String>,
@@ -40,8 +40,6 @@ object UploadEngine {
             .trim('_')
             .ifEmpty { "file" }
 
-    fun readBytesFile(file: File): ByteArray = file.readBytes()
-
     suspend fun extractZipFile(zipFile: File, zipName: String, workDir: File): List<Item> =
         withContext(Dispatchers.IO) {
             val base = cleanPath(zipName)
@@ -65,7 +63,7 @@ object UploadEngine {
                     }
                     val target = "$base/$rel"
                     val f = resolved
-                    items.add(Item(target, f.length()) { f.readBytes() })
+                    items.add(Item(target, f.length(), f))
                 }
             }
             if (items.isEmpty()) throw Exception("ملف الـ zip فارغ أو كل محتوياته مستثناة")
@@ -120,7 +118,7 @@ object UploadEngine {
                         semaphore.acquire()
                         try {
                             try {
-                                val blob = api.createBlob(repoFullName, item.read())
+                                val blob = api.createBlob(repoFullName, item.file)
                                 Triple(item.path, blob.getString("sha"), null as String?)
                             } catch (e: Exception) {
                                 Triple(item.path, null as String?, e.message ?: "خطأ غير معروف")

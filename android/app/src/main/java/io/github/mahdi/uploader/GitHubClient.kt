@@ -5,9 +5,12 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.BufferedSink
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 class GitHubClient(private val token: String) {
@@ -25,12 +28,14 @@ class GitHubClient(private val token: String) {
         url: String,
         jsonBody: String? = null,
         useAuth: Boolean = true,
+        rawBody: RequestBody? = null,
     ): Pair<Int, String> {
         val builder = Request.Builder().url(url)
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
         if (useAuth) builder.header("Authorization", "Bearer $token")
         when {
+            rawBody != null -> builder.method(method, rawBody)
             jsonBody != null -> builder.method(
                 method,
                 jsonBody.toRequestBody("application/json".toMediaType())
@@ -119,10 +124,26 @@ class GitHubClient(private val token: String) {
     fun getCommit(fullName: String, sha: String): JSONObject =
         json("GET", "/repos/$fullName/git/commits/$sha")
 
-    fun createBlob(fullName: String, content: ByteArray): JSONObject {
-        val b64 = android.util.Base64.encodeToString(content, android.util.Base64.NO_WRAP)
-        val body = JSONObject().put("content", b64).put("encoding", "base64")
-        return json("POST", "/repos/$fullName/git/blobs", body)
+    fun createBlob(fullName: String, file: File): JSONObject {
+        val body: RequestBody = object : RequestBody() {
+            override fun contentType() = "application/json".toMediaType()
+            override fun writeTo(sink: BufferedSink) {
+                sink.writeUtf8("{\"content\":\"")
+                val encoder = java.util.Base64.getEncoder()
+                file.inputStream().buffered().use { input ->
+                    val buf = ByteArray(3 * 16384)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n == -1) break
+                        val chunk = if (n == buf.size) buf else java.util.Arrays.copyOf(buf, n)
+                        sink.writeUtf8(encoder.encodeToString(chunk))
+                    }
+                }
+                sink.writeUtf8("\",\"encoding\":\"base64\"}")
+            }
+        }
+        val (_, text) = call("POST", api("/repos/$fullName/git/blobs"), rawBody = body)
+        return JSONObject(text)
     }
 
     fun createTree(fullName: String, baseTree: String, tree: JSONArray): JSONObject =
