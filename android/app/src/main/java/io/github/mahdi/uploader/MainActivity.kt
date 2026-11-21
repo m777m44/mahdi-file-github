@@ -1,17 +1,21 @@
 package io.github.mahdi.uploader
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.text.Editable
+import android.text.TextWatcher
 import android.text.format.Formatter
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageButton
-import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.ProgressBar
-import android.widget.Switch
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,21 +28,21 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
-    override fun attachBaseContext(newBase: android.content.Context) {
+    override fun attachBaseContext(newBase: Context) {
         val config = android.content.res.Configuration(newBase.resources.configuration)
         config.setLocale(java.util.Locale("ar"))
         super.attachBaseContext(newBase.createConfigurationContext(config))
@@ -51,7 +55,6 @@ class MainActivity : AppCompatActivity() {
     private var adapter: RepoAdapter? = null
 
     private lateinit var loginSection: View
-    private lateinit var mainSection: View
     private lateinit var deviceCodeCard: View
     private lateinit var userCodeText: TextView
     private lateinit var loginStatus: TextView
@@ -69,12 +72,71 @@ class MainActivity : AppCompatActivity() {
     private lateinit var fabCreateRepo: com.google.android.material.floatingactionbutton.FloatingActionButton
 
     private var uploadSheet: BottomSheetDialog? = null
+    private var stagingDir: File? = null
 
     private enum class Kind { FILE, FOLDER, ZIP }
-    private data class Pending(val uri: Uri, val kind: Kind, val relPath: String, val size: Long)
+
+    private data class Pending(
+        val stagedFile: File,
+        val kind: Kind,
+        val relPath: String,
+        val size: Long,
+    )
 
     private var pendingDocs = mutableListOf<Pending>()
     private var zipAsIs = false
+    private var pickErrors = mutableListOf<Pair<String, String>>()
+
+    private fun newStagingDir(): File {
+        stagingDir?.deleteRecursively()
+        val dir = File(cacheDir, "upload_staging_${System.currentTimeMillis()}").apply { mkdirs() }
+        stagingDir = dir
+        return dir
+    }
+
+    private fun persistPermission(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Copy a picked document into app-private storage immediately so uploads
+        never depend on the original provider being reachable later. */
+    private fun stageDocument(uri: Uri, relPath: String): File {
+        val dir = stagingDir ?: newStagingDir()
+        val safe = UploadEngine.stableName(relPath)
+        val ext = if (safe.substringAfterLast('.', "").isEmpty()) "bin" else safe.substringAfterLast(".")
+        val stem = safe.substringBeforeLast('.', safe)
+        var target = File(dir, safe)
+        var n = 1
+        while (target.exists()) {
+            target = File(dir, stem + "_" + n + "." + ext)
+            n++
+        }
+        val input = contentResolver.openInputStream(uri)
+            ?: throw Exception(getString(R.string.cannot_read_file, relPath))
+        input.use { stream -> target.outputStream().use { output -> stream.copyTo(output) } }
+        return target
+    }
+
+    private fun displayName(uri: Uri): String {
+        try {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && cursor.moveToFirst()) {
+                    val name = cursor.getString(idx)
+                    if (!name.isNullOrBlank()) return name
+                }
+            }
+        } catch (_: Exception) {
+        }
+        return uri.lastPathSegment ?: "file"
+    }
 
     // ------------------------------------------------------------ launchers
 
@@ -83,11 +145,25 @@ class MainActivity : AppCompatActivity() {
     ) { uris ->
         if (uris.isNullOrEmpty()) return@registerForActivityResult
         scope.launch {
-            val list = withContext(Dispatchers.IO) {
-                uris.mapNotNull { uri -> docInfo(uri)?.let { (name, size) -> Pending(uri, Kind.FILE, name, size) } }
+            val errors = mutableListOf<Pair<String, String>>()
+            val staged = mutableListOf<Pending>()
+            withContext(Dispatchers.IO) {
+                for (uri in uris) {
+                    persistPermission(uri)
+                    val name = displayName(uri)
+                    try {
+                        val file = stageDocument(uri, name)
+                        synchronized(staged) {
+                            staged.add(Pending(file, Kind.FILE, name, file.length()))
+                        }
+                    } catch (e: Exception) {
+                        errors.add(name to (e.message ?: "تعذر النسخ"))
+                    }
+                }
             }
             pendingDocs.removeAll { it.kind == Kind.FILE }
-            pendingDocs.addAll(list)
+            pendingDocs.addAll(staged)
+            pickErrors = errors
             refreshPickedSummary()
         }
     }
@@ -96,10 +172,34 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         if (uri == null) return@registerForActivityResult
+        persistPermission(uri)
         scope.launch {
-            val list = withContext(Dispatchers.IO) { walkTree(uri) }
-            pendingDocs.removeAll { it.kind != Kind.FILE || it.relPath.contains('/') }
-            pendingDocs.addAll(list)
+            val errors = mutableListOf<Pair<String, String>>()
+            val staged = mutableListOf<Pending>()
+            withContext(Dispatchers.IO) {
+                val root = DocumentFile.fromTreeUri(this@MainActivity, uri)
+                    ?: return@withContext
+                val rootName = root.name ?: ""
+                for (child in root.listFiles()) {
+                    val childName = child.name ?: continue
+                    val path = "${rootName}/${childName}"
+                    if (child.isDirectory) {
+                        walkAndStage(child, path, dirStaging(), staged, errors)
+                    } else {
+                        try {
+                            val file = stageDocument(child.uri, path)
+                            synchronized(staged) {
+                                staged.add(Pending(file, Kind.FILE, path, file.length()))
+                            }
+                        } catch (e: Exception) {
+                            errors.add(path to (e.message ?: "تعذر النسخ"))
+                        }
+                    }
+                }
+            }
+            pendingDocs.removeAll { it.relPath.contains('/') || it.kind == Kind.ZIP }
+            pendingDocs.addAll(staged)
+            pickErrors = errors
             refreshPickedSummary()
         }
     }
@@ -109,16 +209,53 @@ class MainActivity : AppCompatActivity() {
     ) { uris ->
         if (uris.isNullOrEmpty()) return@registerForActivityResult
         scope.launch {
-            val list = withContext(Dispatchers.IO) {
-                uris.mapNotNull { uri ->
-                    docInfo(uri)?.let { (name, size) ->
-                        Pending(uri, Kind.ZIP, name, size)
+            val errors = mutableListOf<Pair<String, String>>()
+            val staged = mutableListOf<Pending>()
+            withContext(Dispatchers.IO) {
+                for (uri in uris) {
+                    persistPermission(uri)
+                    val name = displayName(uri)
+                    try {
+                        val file = stageDocument(uri, name)
+                        synchronized(staged) {
+                            staged.add(Pending(file, Kind.ZIP, name, file.length()))
+                        }
+                    } catch (e: Exception) {
+                        errors.add(name to (e.message ?: "تعذر النسخ"))
                     }
                 }
             }
             pendingDocs.removeAll { it.kind == Kind.ZIP }
-            pendingDocs.addAll(list)
+            pendingDocs.addAll(staged)
+            pickErrors = errors
             refreshPickedSummary()
+        }
+    }
+
+    private fun dirStaging(): File = stagingDir ?: newStagingDir()
+
+    private fun walkAndStage(
+        dir: DocumentFile,
+        prefix: String,
+        staging: File,
+        out: MutableList<Pending>,
+        errors: MutableList<Pair<String, String>>,
+    ) {
+        for (child in dir.listFiles()) {
+            val name = child.name ?: continue
+            val path = "${prefix}/${name}"
+            if (child.isDirectory) {
+                walkAndStage(child, path, staging, out, errors)
+            } else {
+                try {
+                    val file = stageDocument(child.uri, path)
+                    synchronized(out) {
+                        out.add(Pending(file, Kind.FILE, path, file.length()))
+                    }
+                } catch (e: Exception) {
+                    errors.add(path to (e.message ?: "تعذر النسخ"))
+                }
+            }
         }
     }
 
@@ -150,7 +287,6 @@ class MainActivity : AppCompatActivity() {
         btnOpenBrowser = findViewById(R.id.btnOpenBrowser)
         btnLoginGitHub = findViewById(R.id.btnLoginGitHub)
         btnPatLogin = findViewById(R.id.btnPatLogin)
-        mainSection = findViewById(R.id.mainSection)
         headerLogin = findViewById(R.id.headerLogin)
         btnSettings = findViewById(R.id.btnSettings)
         btnLogout = findViewById(R.id.btnLogout)
@@ -174,10 +310,10 @@ class MainActivity : AppCompatActivity() {
             repos.clear()
             showLogin()
         }
-        repoSearch.addTextChangedListener(object : android.text.TextWatcher {
+        repoSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: android.text.Editable?) {
+            override fun afterTextChanged(s: Editable?) {
                 adapter?.filter(s?.toString().orEmpty())
             }
         })
@@ -188,14 +324,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun showLogin() {
         loginSection.isVisible = true
-        mainSection.isVisible = false
+        mainSectionHidden()
         deviceCodeCard.isVisible = false
         loginStatus.text = ""
     }
 
+    private fun mainSectionHidden() {
+        findViewById<View>(R.id.mainSection).isVisible = false
+    }
+
     private fun showMain() {
         loginSection.isVisible = false
-        mainSection.isVisible = true
+        findViewById<View>(R.id.mainSection).isVisible = true
         headerLogin.text = Store.login(this).ifEmpty { getString(R.string.app_name) }
     }
 
@@ -240,10 +380,13 @@ class MainActivity : AppCompatActivity() {
                 Store.setToken(this@MainActivity, token)
                 Store.setLogin(this@MainActivity, user.optString("login"))
                 api = client
-                Toast.makeText(this@MainActivity, getString(R.string.welcome, user.optString("login")),
+                Toast.makeText(this@MainActivity,
+                    getString(R.string.welcome, user.optString("login")),
                     Toast.LENGTH_SHORT).show()
                 showMain()
                 loadRepos()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 loginStatus.text = getString(R.string.login_failed, e.message ?: "")
             }
@@ -255,7 +398,9 @@ class MainActivity : AppCompatActivity() {
             scope.launch {
                 try {
                     loginStatus.text = getString(R.string.requesting_code)
-                    val code = withContext(Dispatchers.IO) { apiOrNew().requestDeviceCode(clientId) }
+                    val code = withContext(Dispatchers.IO) {
+                        (api ?: GitHubClient("")).requestDeviceCode(clientId)
+                    }
                     val userCode = code.getString("user_code")
                     val uri = code.getString("verification_uri")
                     val interval = code.optInt("interval", 5).coerceAtLeast(3)
@@ -272,8 +417,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
-    private fun apiOrNew(): GitHubClient = api ?: GitHubClient("").also { }
 
     private fun pollDeviceFlow(clientId: String, deviceCode: String, interval: Int) {
         scope.launch {
@@ -331,8 +474,11 @@ class MainActivity : AppCompatActivity() {
                 repos = (0 until result.length()).map { result.getJSONObject(it) }.toMutableList()
                 repos.sortByDescending { it.optString("updated_at") }
                 setupAdapter()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, getString(R.string.load_failed, e.message ?: ""),
+                Toast.makeText(this@MainActivity,
+                    getString(R.string.load_failed, e.message ?: ""),
                     Toast.LENGTH_LONG).show()
             } finally {
                 reposProgress.isVisible = false
@@ -351,12 +497,11 @@ class MainActivity : AppCompatActivity() {
         adapter!!.filter(repoSearch.text?.toString().orEmpty())
     }
 
-    private fun showCreateRepoDialog(prefillName: String = "") {
+    private fun showCreateRepoDialog() {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_create_repo, null)
         val name = view.findViewById<EditText>(R.id.repoNameInput)
         val desc = view.findViewById<EditText>(R.id.repoDescInput)
-        val priv = view.findViewById<Switch>(R.id.repoPrivateSwitch)
-        name.setText(prefillName)
+        val priv = view.findViewById<android.widget.Switch>(R.id.repoPrivateSwitch)
         MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.create_repo_title))
             .setView(view)
@@ -374,14 +519,19 @@ class MainActivity : AppCompatActivity() {
         reposProgress.isVisible = true
         scope.launch {
             try {
-                val repo = withContext(Dispatchers.IO) { client.createRepo(name, private, description) }
+                val repo = withContext(Dispatchers.IO) {
+                    client.createRepo(name, private, description)
+                }
                 Toast.makeText(this@MainActivity,
                     getString(R.string.repo_created, repo.optString("full_name")),
                     Toast.LENGTH_SHORT).show()
                 loadRepos()
                 openUploadSheet(repo)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, getString(R.string.repo_create_failed, e.message ?: ""),
+                Toast.makeText(this@MainActivity,
+                    getString(R.string.repo_create_failed, e.message ?: ""),
                     Toast.LENGTH_LONG).show()
             } finally {
                 reposProgress.isVisible = false
@@ -391,61 +541,41 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------ upload
 
-    private fun docInfo(uri: Uri): Pair<String, Long>? {
-        return try {
-            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                val sizeIdx = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                if (cursor.moveToFirst()) {
-                    val name = if (nameIdx >= 0) cursor.getString(nameIdx) else uri.toString().substringAfterLast('/')
-                    val size = if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) cursor.getLong(sizeIdx) else 0L
-                    Pair(UploadEngine.cleanPath(name).substringAfterLast('/'), size)
-                } else null
-            } ?: Pair(UploadEngine.cleanPath(uri.toString()).substringAfterLast('/'), 0L)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun walkTree(treeUri: Uri): List<Pending> {
-        val root = DocumentFile.fromTreeUri(this, treeUri) ?: return emptyList()
-        val out = mutableListOf<Pending>()
-        fun walk(dir: DocumentFile, prefix: String) {
-            for (child in dir.listFiles()) {
-                val childName = child.name ?: continue
-                val path = if (prefix.isEmpty()) childName else "$prefix/$childName"
-                if (child.isDirectory) walk(child, path)
-                else out.add(Pending(child.uri, Kind.FILE, path, child.length()))
-            }
-        }
-        val rootName = root.name ?: ""
-        val children = mutableListOf<Pending>()
-        for (child in root.listFiles()) {
-            val childName = child.name ?: continue
-            val path = "$rootName/$childName"
-            if (child.isDirectory) walk(child, path)
-            else children.add(Pending(child.uri, Kind.FILE, path, child.length()))
-        }
-        // keep a sticky folder marker so the picker caches what was chosen
-        if (children.isEmpty() && root.listFiles().isEmpty()) return emptyList()
-        return children
-    }
-
     private fun refreshPickedSummary() {
         val sheet = uploadSheet ?: return
         val summary = sheet.findViewById<TextView>(R.id.pickedSummary) ?: return
-        val totalSize = pendingDocs.sumOf { it.size }
-        val names = pendingDocs.take(12).joinToString("\n") {
-            "• ${it.relPath} (${Formatter.formatShortFileSize(this, it.size)})"
+        val sb = StringBuilder()
+        if (pendingDocs.isEmpty()) {
+            sb.append(getString(R.string.nothing_picked))
+        } else {
+            val totalSize = pendingDocs.sumOf { it.size }
+            sb.append(getString(
+                R.string.picked_summary_short,
+                pendingDocs.size,
+                Formatter.formatShortFileSize(this, totalSize),
+            ))
+            sb.append('\n')
+            pendingDocs.take(15).forEach {
+                sb.append("• ").append(it.relPath)
+                    .append(" (").append(Formatter.formatShortFileSize(this, it.size)).append(")\n")
+            }
+            if (pendingDocs.size > 15) {
+                sb.append(getString(R.string.more_files, pendingDocs.size - 15)).append('\n')
+            }
         }
-        summary.text = if (pendingDocs.isEmpty()) getString(R.string.nothing_picked)
-        else getString(R.string.picked_summary, pendingDocs.size, names,
-            Formatter.formatShortFileSize(this, totalSize))
+        if (pickErrors.isNotEmpty()) {
+            sb.append('\n').append(getString(R.string.stage_errors, pickErrors.size)).append('\n')
+            pickErrors.forEach { (name, err) -> sb.append("⚠ ").append(name).append(": ").append(err).append('\n') }
+        }
+        summary.text = sb.toString()
     }
 
     private fun openUploadSheet(repo: org.json.JSONObject) {
         pendingDocs.clear()
+        pickErrors.clear()
         zipAsIs = false
+        newStagingDir()
+
         val view = LayoutInflater.from(this).inflate(R.layout.sheet_upload, null)
         val dialog = BottomSheetDialog(this)
         dialog.setContentView(view)
@@ -455,11 +585,10 @@ class MainActivity : AppCompatActivity() {
         val branchInput = view.findViewById<EditText>(R.id.uploadBranchInput)
         val prefixInput = view.findViewById<EditText>(R.id.uploadPrefixInput)
         val messageInput = view.findViewById<EditText>(R.id.uploadMessageInput)
-        val zipModeGroup = view.findViewById<android.widget.RadioGroup>(R.id.zipModeGroup)
+        val zipModeGroup = view.findViewById<RadioGroup>(R.id.zipModeGroup)
         val zipModeRow = view.findViewById<View>(R.id.zipModeRow)
         val progress = view.findViewById<LinearProgressIndicator>(R.id.uploadProgress)
         val progressLabel = view.findViewById<TextView>(R.id.progressLabel)
-        val pickedSummary = view.findViewById<TextView>(R.id.pickedSummary)
         val uploadBtn = view.findViewById<MaterialButton>(R.id.btnUpload)
         val allInputs = listOf(repoInput, branchInput, prefixInput, messageInput)
 
@@ -467,8 +596,7 @@ class MainActivity : AppCompatActivity() {
         branchInput.hint = getString(R.string.default_branch_hint, repo.optString("default_branch"))
 
         fun updateZipRow() {
-            val hasZip = pendingDocs.any { it.kind == Kind.ZIP }
-            zipModeRow.isVisible = hasZip
+            zipModeRow.isVisible = pendingDocs.any { it.kind == Kind.ZIP }
         }
         updateZipRow()
 
@@ -479,10 +607,10 @@ class MainActivity : AppCompatActivity() {
             pickFolder.launch(null)
         }
         view.findViewById<MaterialButton>(R.id.btnPickZip).setOnClickListener {
-            pickZip.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+            pickZip.launch(arrayOf("application/zip", "application/x-zip-compressed"))
         }
         zipModeGroup.setOnCheckedChangeListener { _, _ ->
-            zipAsIs = view.findViewById<android.widget.RadioButton>(R.id.zipAsIs).isChecked
+            zipAsIs = view.findViewById<RadioButton>(R.id.zipAsIs).isChecked
         }
 
         uploadBtn.setOnClickListener {
@@ -499,6 +627,7 @@ class MainActivity : AppCompatActivity() {
             val branch = branchInput.text.toString().trim()
             val prefix = UploadEngine.cleanPath(prefixInput.text.toString().trim())
             val message = messageInput.text.toString().trim()
+            val snapshot = pendingDocs.toList()
 
             uploadBtn.isEnabled = false
             allInputs.forEach { it.isEnabled = false }
@@ -506,12 +635,41 @@ class MainActivity : AppCompatActivity() {
 
             scope.launch {
                 try {
-                    val items = buildUploadTasks(prefix)
-
                     val actualRepo = withContext(Dispatchers.IO) { client.getRepo(repoFull) }
                     val targetBranch = branch.ifEmpty { actualRepo.optString("default_branch") }
 
-                    val finalResult = UploadEngine.upload(
+                    val items = mutableListOf<UploadEngine.Item>()
+                    for (doc in snapshot) {
+                        when (doc.kind) {
+                            Kind.FILE -> {
+                                val path = if (prefix.isEmpty()) doc.relPath else "${prefix}/${doc.relPath}"
+                                val f = doc.stagedFile
+                                items.add(UploadEngine.Item(path, f.length()) { UploadEngine.readBytesFile(f) })
+                            }
+                            Kind.ZIP -> {
+                                if (zipAsIs) {
+                                    val path = if (prefix.isEmpty()) doc.relPath else "${prefix}/${doc.relPath}"
+                                    val f = doc.stagedFile
+                                    items.add(UploadEngine.Item(path, f.length()) { UploadEngine.readBytesFile(f) })
+                                } else {
+                                    val workDir = File(dirStaging(), "zipwork_${System.nanoTime()}").apply { mkdirs() }
+                                    val extracted = UploadEngine.extractZipFile(
+                                        doc.stagedFile, doc.relPath, workDir,
+                                    )
+                                    for (item in extracted) {
+                                        items.add(UploadEngine.Item(
+                                            if (prefix.isEmpty()) item.path else "${prefix}/${item.path}",
+                                            item.size,
+                                            item.read,
+                                        ))
+                                    }
+                                }
+                            }
+                            Kind.FOLDER -> {}
+                        }
+                    }
+
+                    val result = UploadEngine.upload(
                         client, repoFull, targetBranch, items, message,
                     ) { done, total, current ->
                         scope.launch {
@@ -521,11 +679,13 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     val summary = buildString {
-                        append(getString(R.string.upload_done, finalResult.uploaded.size, repoFull, targetBranch))
-                        if (finalResult.commits > 0) append("\n" + getString(R.string.commits_count, finalResult.commits))
-                        if (finalResult.failed.isNotEmpty()) {
-                            append("\n\n" + getString(R.string.failed_files, finalResult.failed.size))
-                            finalResult.failed.take(10).forEach { append("\n• ${it.first} — ${it.second}") }
+                        append(getString(R.string.upload_done, result.uploaded.size, repoFull, targetBranch))
+                        if (result.commits > 0) append("\n").append(getString(R.string.commits_count, result.commits))
+                        if (result.failed.isNotEmpty()) {
+                            append("\n\n").append(getString(R.string.failed_files, result.failed.size))
+                            result.failed.take(10).forEach { (path, err) ->
+                                append("\n• ").append(path).append(" — ").append(err)
+                            }
                         }
                     }
                     MaterialAlertDialogBuilder(this@MainActivity)
@@ -534,10 +694,12 @@ class MainActivity : AppCompatActivity() {
                         .setPositiveButton(getString(R.string.open_repo)) { _, _ ->
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(actualRepo.optString("html_url"))))
                         }
-                        .setNeutralButton(getString(R.string.close), null)
+                        .setNegativeButton(getString(R.string.close), null)
                         .show()
                     dialog.dismiss()
                     loadRepos()
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     MaterialAlertDialogBuilder(this@MainActivity)
                         .setTitle(getString(R.string.upload_failed_title))
@@ -559,39 +721,6 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
         refreshPickedSummary()
     }
-
-    private suspend fun buildUploadTasks(prefix: String): List<UploadEngine.Item> =
-        withContext(Dispatchers.IO) {
-            val client = api ?: return@withContext emptyList()
-            val items = mutableListOf<UploadEngine.Item>()
-            for (doc in pendingDocs) {
-                when (doc.kind) {
-                    Kind.FILE -> {
-                        val path = if (prefix.isEmpty()) doc.relPath else "$prefix/${doc.relPath}"
-                        val uri = doc.uri
-                        items.add(UploadEngine.Item(path, doc.size) { UploadEngine.readBytes(applicationContext, uri) })
-                    }
-                    Kind.ZIP -> {
-                        if (zipAsIs) {
-                            val path = if (prefix.isEmpty()) doc.relPath else "$prefix/${doc.relPath}"
-                            val uri = doc.uri
-                            items.add(UploadEngine.Item(path, doc.size) { UploadEngine.readBytes(applicationContext, uri) })
-                        } else {
-                            val extracted = UploadEngine.extractZip(applicationContext, doc.uri, doc.relPath)
-                            for (item in extracted) {
-                                items.add(UploadEngine.Item(
-                                    if (prefix.isEmpty()) item.path else "$prefix/${item.path}",
-                                    item.size,
-                                    item.read,
-                                ))
-                            }
-                        }
-                    }
-                    Kind.FOLDER -> {}
-                }
-            }
-            items
-        }
 }
 
 class RepoAdapter(
@@ -600,7 +729,6 @@ class RepoAdapter(
 ) : RecyclerView.Adapter<RepoAdapter.Holder>() {
 
     private var shown: List<org.json.JSONObject> = source
-    private val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
     class Holder(val root: View) : RecyclerView.ViewHolder(root) {
         val name: TextView = root.findViewById(R.id.repoName)
@@ -610,7 +738,7 @@ class RepoAdapter(
         val upload: MaterialButton = root.findViewById(R.id.btnUploadSmall)
     }
 
-    override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int): Holder {
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_repo, parent, false)
         return Holder(view)
     }
@@ -626,7 +754,9 @@ class RepoAdapter(
         holder.desc.text = repo.optString("description")
             .ifEmpty { holder.root.context.getString(R.string.no_desc) }
         val updated = repo.optString("updated_at").take(10)
-        holder.meta.text = "الفرع: ${repo.optString("default_branch")}  •  آخر تحديث: $updated"
+        holder.meta.text = holder.root.context.getString(
+            R.string.repo_meta, repo.optString("default_branch"), updated,
+        )
         holder.root.setOnClickListener { onClick(repo) }
         holder.upload.setOnClickListener { onClick(repo) }
     }
@@ -634,8 +764,10 @@ class RepoAdapter(
     fun filter(query: String) {
         val q = query.trim().lowercase(Locale.ROOT)
         shown = if (q.isEmpty()) source
-        else source.filter { it.optString("full_name").lowercase(Locale.ROOT).contains(q) ||
-                it.optString("description").lowercase(Locale.ROOT).contains(q) }
+        else source.filter {
+            it.optString("full_name").lowercase(Locale.ROOT).contains(q) ||
+                it.optString("description").lowercase(Locale.ROOT).contains(q)
+        }
         notifyDataSetChanged()
     }
 

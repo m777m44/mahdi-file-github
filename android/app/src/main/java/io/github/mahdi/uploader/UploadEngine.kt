@@ -1,14 +1,9 @@
 package io.github.mahdi.uploader
 
-import android.content.Context
-import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.zip.ZipFile
@@ -39,38 +34,36 @@ object UploadEngine {
         return parts.any { it == ".git" || it == "__MACOSX" || it in ignoredNames }
     }
 
-    fun readBytes(context: Context, uri: Uri): ByteArray =
-        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw Exception("تعذر قراءة الملف: $uri")
+    fun stableName(relativePath: String): String =
+        cleanPath(relativePath)
+            .replace(Regex("[^A-Za-z0-9._\\-/ ]"), "_")
+            .trim('_')
+            .ifEmpty { "file" }
 
     fun readBytesFile(file: File): ByteArray = file.readBytes()
 
-    suspend fun extractZip(context: Context, zipUri: Uri, zipName: String): List<Item> =
+    suspend fun extractZipFile(zipFile: File, zipName: String, workDir: File): List<Item> =
         withContext(Dispatchers.IO) {
-            val cacheDir = File(context.cacheDir, "zip_${System.nanoTime()}")
-            cacheDir.mkdirs()
-            val zipFile = File(cacheDir, cleanPath(zipName).substringAfterLast('/')
-                .ifEmpty { "archive.zip" })
-            context.contentResolver.openInputStream(zipUri)?.use { input ->
-                zipFile.outputStream().use { output -> input.copyTo(output) }
-            } ?: throw Exception("تعذر قراءة ملف الـ zip")
-
-            val base = cleanPath(zipName).removeSuffix(".zip").removeSuffix(".ZIP")
+            val base = cleanPath(zipName)
+                .removeSuffix(".zip").removeSuffix(".ZIP").removeSuffix(".Zip")
+                .ifEmpty { "archive" }
             val items = mutableListOf<Item>()
+            val extractRoot = File(workDir, "extract").canonicalFile
+            extractRoot.mkdirs()
             ZipFile(zipFile).use { archive ->
                 val entries = archive.entries()
                 while (entries.hasMoreElements()) {
                     val entry = entries.nextElement()
                     if (entry.isDirectory) continue
                     val rel = cleanPath(entry.name)
-                    if (isJunk(rel)) continue
-                    val resolved = File(cacheDir, rel).canonicalFile
-                    if (!resolved.path.startsWith(cacheDir.canonicalFile.path)) continue
+                    if (rel.isEmpty() || isJunk(rel)) continue
+                    val resolved = File(extractRoot, rel).canonicalFile
+                    if (!resolved.path.startsWith(extractRoot.path)) continue
                     resolved.parentFile?.mkdirs()
                     archive.getInputStream(entry).use { input ->
                         resolved.outputStream().use { output -> input.copyTo(output) }
                     }
-                    val target = if (base.isNotEmpty()) "$base/$rel" else rel
+                    val target = "$base/$rel"
                     val f = resolved
                     items.add(Item(target, f.length()) { f.readBytes() })
                 }
@@ -87,10 +80,6 @@ object UploadEngine {
         message: String,
         onProgress: (done: Int, total: Int, current: String) -> Unit,
     ): Result = withContext(Dispatchers.IO) {
-        val items = mutableListOf<Item>()
-        for (item in inputItems) {
-            if (item.size <= SAFE_LIMIT) items.add(item)
-        }
         val big = inputItems.filter { it.size > SAFE_LIMIT }
 
         val commitMessage = message.ifBlank { "رفع ملفات عبر تطبيق GitHub Uploader" }
@@ -113,8 +102,10 @@ object UploadEngine {
         treeSha = initial.getJSONObject("tree").getString("sha")
 
         val uploaded = mutableListOf<String>()
-        val failed = big.map { it.path to "حجم الملف يتجاوز حد GitHub البالغ 100 ميجابايت" }.toMutableList()
+        val failed = big.map { it.path to "حجم الملف يتجاوز حد GitHub البالغ 100 ميجابايت" }
+            .toMutableList()
         var commits = 0
+        var processed = 0
 
         var batch = mutableListOf<Item>()
         var batchBytes = 0L
@@ -122,18 +113,20 @@ object UploadEngine {
         suspend fun flush() {
             if (batch.isEmpty()) return
             val current = batch.toList()
-            val doneBefore = uploaded.size + failed.size
+            val semaphore = kotlinx.coroutines.sync.Semaphore(6)
             val entries = coroutineScope {
-                val semaphore = Semaphore(6)
                 current.map { item ->
                     async {
-                        semaphore.withPermit {
+                        semaphore.acquire()
+                        try {
                             try {
                                 val blob = api.createBlob(repoFullName, item.read())
                                 Triple(item.path, blob.getString("sha"), null as String?)
                             } catch (e: Exception) {
                                 Triple(item.path, null as String?, e.message ?: "خطأ غير معروف")
                             }
+                        } finally {
+                            semaphore.release()
                         }
                     }
                 }.awaitAll()
@@ -150,8 +143,8 @@ object UploadEngine {
                 } else if (error != null) {
                     failed.add(path to error)
                 }
-                onProgress(doneBefore + uploaded.size + failed.size - (big.size),
-                    inputItems.size, path)
+                processed++
+                onProgress(processed, inputItems.size, path)
             }
             if (tree.length() > 0) {
                 val newTree = api.createTree(repoFullName, treeSha, tree)
@@ -168,11 +161,10 @@ object UploadEngine {
             batchBytes = 0L
         }
 
-        inputItems.forEachIndexed { index, item ->
-            if (item.size > SAFE_LIMIT) return@forEachIndexed
+        inputItems.forEach { item ->
+            if (item.size > SAFE_LIMIT) return@forEach
             batch.add(item)
             batchBytes += item.size
-            onProgress(index + 1, inputItems.size, item.path)
             if (batch.size >= 150 || batchBytes >= 20L * 1024 * 1024) flush()
         }
         flush()

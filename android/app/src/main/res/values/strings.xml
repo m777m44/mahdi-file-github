@@ -72,4 +72,9 @@
     <string name="badge_public">🌍 عام</string>
     <string name="badge_private">🔒 خاص</string>
     <string name="no_desc">بدون وصف</string>
+    <string name="cannot_read_file">تعذر نسخ الملف: %1$s</string>
+    <string name="picked_summary_short">تم تجهيز %1$d عنصر — المجموع: %2$s\n</string>
+    <string name="more_files">…و %1$d ملفاً آخر</string>
+    <string name="stage_errors">⚠ فشل تجهيز %1$d ملف:</string>
+    <string name="repo_meta">الفرع: %1$s  •  آخر تحديث: %2$s</string>
 </resources>
