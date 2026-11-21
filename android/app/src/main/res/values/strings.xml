@@ -69,4 +69,7 @@
     <string name="close">إغلاق</string>
     <string name="btn_pick_upload">اختيار للرفع ⬆</string>
     <string name="default_branch_hint">الفرع الافتراضي: %1$s</string>
+    <string name="badge_public">🌍 عام</string>
+    <string name="badge_private">🔒 خاص</string>
+    <string name="no_desc">بدون وصف</string>
 </resources>

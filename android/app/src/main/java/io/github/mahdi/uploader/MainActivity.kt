@@ -38,6 +38,12 @@ import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        val config = android.content.res.Configuration(newBase.resources.configuration)
+        config.setLocale(java.util.Locale("ar"))
+        super.attachBaseContext(newBase.createConfigurationContext(config))
+    }
+
     private val scope = CoroutineScope(Dispatchers.Main + Job())
 
     private var api: GitHubClient? = null
@@ -614,8 +620,11 @@ class RepoAdapter(
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val repo = shown[position]
         holder.name.text = repo.optString("full_name")
-        holder.badge.text = if (repo.optBoolean("private")) "🔒 خاص" else "🌍 عام"
-        holder.desc.text = repo.optString("description").ifEmpty { "بدون وصف" }
+        holder.badge.text = if (repo.optBoolean("private"))
+            holder.root.context.getString(R.string.badge_private)
+        else holder.root.context.getString(R.string.badge_public)
+        holder.desc.text = repo.optString("description")
+            .ifEmpty { holder.root.context.getString(R.string.no_desc) }
         val updated = repo.optString("updated_at").take(10)
         holder.meta.text = "الفرع: ${repo.optString("default_branch")}  •  آخر تحديث: $updated"
         holder.root.setOnClickListener { onClick(repo) }
