@@ -721,6 +721,7 @@ class MainActivity : AppCompatActivity() {
     private val UPDATE_BRANCH = "vibe/github-uploader-553067"
 
     private var updateSheetDialog: BottomSheetDialog? = null
+    private var downloadedApk: File? = null
 
     private fun checkForUpdate() {
         val client = api ?: GitHubClient("")
@@ -800,63 +801,146 @@ class MainActivity : AppCompatActivity() {
         val dialog = BottomSheetDialog(this)
         dialog.setContentView(view)
         updateSheetDialog = dialog
+        downloadedApk = null
         view.findViewById<TextView>(R.id.updateVersions).text =
             getString(R.string.update_new_version, info.first) + "\n" +
             getString(R.string.update_current_version, BuildConfig.VERSION_NAME)
         val btnNow = view.findViewById<MaterialButton>(R.id.btnUpdateNow)
         val progress = view.findViewById<LinearProgressIndicator>(R.id.updateProgress)
+        val percentLabel = view.findViewById<TextView>(R.id.updatePercent)
+        var downloading = false
+
         view.findViewById<MaterialButton>(R.id.btnUpdateCancel).setOnClickListener { dialog.dismiss() }
+
         btnNow.setOnClickListener {
+            val ready = downloadedApk
+            if (ready != null) {
+                installUpdate(ready)
+                return@setOnClickListener
+            }
+            if (downloading) return@setOnClickListener
+            downloading = true
             btnNow.isEnabled = false
             progress.isVisible = true
-            downloadUpdate(info.second, info.third) {
-                btnNow.isEnabled = true
-                progress.isVisible = false
-            }
+            percentLabel.isVisible = true
+            progress.isIndeterminate = true
+            percentLabel.text = getString(R.string.update_downloading)
+
+            downloadUpdate(info.second, info.third,
+                onProgress = { p, done, total ->
+                    if (p >= 0) {
+                        progress.isIndeterminate = false
+                        progress.setProgressCompat(p, true)
+                        percentLabel.text = getString(
+                            R.string.update_percent, p,
+                            Formatter.formatShortFileSize(this, done),
+                            Formatter.formatShortFileSize(this, total),
+                        )
+                    }
+                },
+                onDone = { apk, err ->
+                    downloading = false
+                    if (apk != null) {
+                        downloadedApk = apk
+                        progress.isIndeterminate = false
+                        progress.setProgressCompat(100, true)
+                        percentLabel.text = getString(R.string.update_downloaded)
+                        btnNow.text = getString(R.string.update_btn_do_install)
+                        btnNow.isEnabled = true
+                    } else {
+                        percentLabel.isVisible = false
+                        progress.isVisible = false
+                        btnNow.isEnabled = true
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.update_download_failed, err ?: ""),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                },
+            )
         }
         dialog.setOnDismissListener { updateSheetDialog = null }
         dialog.show()
     }
 
-    private fun downloadUpdate(url: String, fileName: String, onDone: () -> Unit) {
+    private fun downloadUpdate(
+        url: String,
+        fileName: String,
+        onProgress: (percent: Int, doneBytes: Long, totalBytes: Long) -> Unit,
+        onDone: (apk: File?, error: String?) -> Unit,
+    ) {
         scope.launch(Dispatchers.IO) {
-            try {
-                val http = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
-                    .build()
-                http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { resp ->
-                    if (!resp.isSuccessful) {
-                        throw Exception(resp.code.toString())
+            var attempt = 0
+            while (true) {
+                try {
+                    val http = okhttp3.OkHttpClient.Builder()
+                        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
+                        .build()
+                    http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { resp ->
+                        if (!resp.isSuccessful) {
+                            throw Exception(resp.code.toString())
+                        }
+                        val target = File(getExternalFilesDir(null), "updates")
+                            .apply { mkdirs() }
+                            .let { File(it, fileName.ifBlank { "update.apk" }) }
+                        val body = resp.body ?: throw Exception("empty body")
+                        val total = body.contentLength()
+                        var done = 0L
+                        body.byteStream().use { input ->
+                            target.outputStream().use { output ->
+                                val buf = ByteArray(64 * 1024)
+                                while (true) {
+                                    val n = input.read(buf)
+                                    if (n == -1) break
+                                    output.write(buf, 0, n)
+                                    done += n
+                                    if (total > 0) {
+                                        val p = (done * 100 / total).toInt().coerceIn(0, 100)
+                                        runOnUiThread { onProgress(p, done, total) }
+                                    }
+                                }
+                            }
+                        }
+                        runOnUiThread { onDone(target, null) }
                     }
-                    val target = File(getExternalFilesDir(null), "updates")
-                        .apply { mkdirs() }
-                        .let { File(it, fileName.ifBlank { "update.apk" }) }
-                    resp.body?.byteStream()?.use { input ->
-                        target.outputStream().use { output -> input.copyTo(output) }
-                    } ?: throw Exception("empty body")
-                    runOnUiThread {
-                        Toast.makeText(this@MainActivity,
-                            getString(R.string.update_ready_toast),
-                            Toast.LENGTH_SHORT).show()
-                        installUpdate(target)
+                    return@launch
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (attempt < 2) {
+                        attempt++
+                        delay(3_000L)
+                        continue
                     }
+                    runOnUiThread { onDone(null, e.message ?: e.javaClass.simpleName) }
+                    return@launch
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                runOnUiThread {
-                    Toast.makeText(this@MainActivity,
-                        getString(R.string.update_download_failed, e.message ?: ""),
-                        Toast.LENGTH_LONG).show()
-                }
-            } finally {
-                runOnUiThread { onDone() }
             }
         }
     }
 
     private fun installUpdate(apk: File) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()
+        ) {
+            Toast.makeText(this, getString(R.string.update_need_permission), Toast.LENGTH_LONG).show()
+            try {
+                startActivity(
+                    Intent(
+                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName"),
+                    ),
+                )
+            } catch (_: Exception) {
+                try {
+                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES))
+                } catch (_: Exception) {
+                }
+            }
+            return
+        }
         val uri = androidx.core.content.FileProvider.getUriForFile(
             this, "$packageName.fileprovider", apk,
         )
@@ -873,6 +957,7 @@ class MainActivity : AppCompatActivity() {
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 )
             } catch (_: Exception) {
+                Toast.makeText(this, getString(R.string.update_install_failed), Toast.LENGTH_LONG).show()
             }
         }
     }

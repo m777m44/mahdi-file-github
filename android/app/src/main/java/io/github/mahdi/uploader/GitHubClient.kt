@@ -1,5 +1,6 @@
 package io.github.mahdi.uploader
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -31,6 +32,7 @@ class GitHubClient(private val token: String) {
         private const val PACE_MS = 200L
         private val RATE_LIMIT_WAITS_MS =
             longArrayOf(60_000L, 90_000L, 150_000L, 240_000L, 420_000L, 600_000L)
+        private val NETWORK_BACKOFF_MS = longArrayOf(5_000L, 15_000L, 45_000L)
     }
 
     private val paceLock = Any()
@@ -66,6 +68,7 @@ class GitHubClient(private val token: String) {
         rawBody: RequestBody? = null,
     ): Pair<Int, String> {
         var attempt = 0
+        var netAttempt = 0
         while (true) {
             pace()
             val builder = Request.Builder().url(url)
@@ -81,7 +84,18 @@ class GitHubClient(private val token: String) {
                 method != "GET" && method != "HEAD" -> builder.method(method, null)
             }
 
-            val resp = http.newCall(builder.build()).execute()
+            val resp = try {
+                http.newCall(builder.build()).execute()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: java.io.IOException) {
+                if (netAttempt < NETWORK_BACKOFF_MS.size) {
+                    Thread.sleep(NETWORK_BACKOFF_MS[netAttempt])
+                    netAttempt++
+                    continue
+                }
+                throw GitHubException(-1, "تعذر الاتصال بـ GitHub — تحقّق من الاتصال بالإنترنت ثم أعد المحاولة (${e.message ?: "شبكة"})")
+            }
             val code = resp.code
             val retryAfter = resp.header("Retry-After")?.toLongOrNull()
             val bodyStr = resp.body?.string().orEmpty()

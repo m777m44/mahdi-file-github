@@ -104,4 +104,11 @@
     <string name="update_btn_cancel">إلغاء ✖</string>
     <string name="update_download_failed">فشل تحميل التحديث: %1$s</string>
     <string name="update_ready_toast">تم تحميل التحديث ✔ أكمل التثبيت من النافذة التالية</string>
+    <string name="update_downloading">جارٍ تحميل التحديث…</string>
+    <string name="update_percent">جارٍ التحميل: %1$d%% — %2$s من %3$s</string>
+    <string name="update_downloaded">تم التحميل ✔ جاهز للتثبيت</string>
+    <string name="update_btn_do_install">✅ تثبيت الآن</string>
+    <string name="update_need_permission">لإكمال التثبيت اسمح بخيار «تثبيت التطبيقات غير المعروفة» لهذا التطبيق، ثم اضغط تثبيت مرة أخرى</string>
+    <string name="update_download_retrying">تعذر الاتصال — جارٍ إعادة المحاولة…</string>
+    <string name="update_install_failed">تعذر بدء التثبيت — تأكد من صلاحية تثبيت التطبيقات غير المعروفة</string>
 </resources>

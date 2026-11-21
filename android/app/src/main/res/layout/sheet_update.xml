@@ -44,10 +44,23 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="18dp"
+        android:max="100"
         android:indeterminate="true"
         android:visibility="gone"
         app:indicatorColor="@color/accent_bright"
-        app:trackColor="@color/line" />
+        app:trackColor="@color/line"
+        app:trackCornerRadius="6dp" />
+
+    <TextView
+        android:id="@+id/updatePercent"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center"
+        android:textColor="@color/accent_bright"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnUpdateNow"
