@@ -77,4 +77,9 @@
     <string name="more_files">…و %1$d ملفاً آخر</string>
     <string name="stage_errors">⚠ فشل تجهيز %1$d ملف:</string>
     <string name="repo_meta">الفرع: %1$s  •  آخر تحديث: %2$s</string>
+    <string name="advanced_options">⚙ خيارات متقدمة (اختياري)</string>
+    <string name="branch_optional_hint">الفرع — اختياري، افتراضياً يُرفع على الفرع الأساسي للمستودع</string>
+    <string name="prefix_optional_hint">مجلد داخل المستودع — اختياري، مثال: صوري أو docs</string>
+    <string name="message_optional_hint">رسالة الالتزام — اختياري</string>
+    <string name="empty_or_unreadable">الملف فارغ أو لا يمكن قراءته: %1$s</string>
 </resources>

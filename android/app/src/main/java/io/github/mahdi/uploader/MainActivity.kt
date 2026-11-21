@@ -118,10 +118,55 @@ class MainActivity : AppCompatActivity() {
             target = File(dir, stem + "_" + n + "." + ext)
             n++
         }
-        val input = contentResolver.openInputStream(uri)
-            ?: throw Exception(getString(R.string.cannot_read_file, relPath))
+        val input = openReadably(uri)
         input.use { stream -> target.outputStream().use { output -> stream.copyTo(output) } }
+        if (target.length() == 0L) {
+            target.delete()
+            throw Exception(getString(R.string.empty_or_unreadable, relPath))
+        }
         return target
+    }
+
+    /** Tries several reading strategies with retries: a plain stream, a file
+        descriptor, and (last resort) the raw path reported by the provider,
+        so flaky providers or freshly moved files do not break staging. */
+    private fun openReadably(uri: Uri): java.io.InputStream {
+        var lastError: Exception? = null
+        repeat(3) { attempt ->
+            try {
+                contentResolver.openInputStream(uri)?.let { return it }
+            } catch (e: Exception) {
+                lastError = e
+            } catch (t: Throwable) {
+                lastError = Exception(t.message, t)
+            }
+            try {
+                val pfd = contentResolver.openFileDescriptor(uri, "r")
+                if (pfd != null) {
+                    return android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd)
+                }
+            } catch (e: Exception) {
+                lastError = e
+            } catch (t: Throwable) {
+                lastError = Exception(t.message, t)
+            }
+            try {
+                contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    val dataIdx = c.getColumnIndex("_data")
+                    if (dataIdx >= 0 && c.moveToFirst()) {
+                        val path = c.getString(dataIdx)
+                        if (!path.isNullOrBlank() && android.os.Build.VERSION.SDK_INT < 30) {
+                            val f = File(path)
+                            if (f.exists() && f.canRead()) return f.inputStream()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                lastError = e
+            }
+            Thread.sleep(400L * (attempt + 1))
+        }
+        throw Exception(getString(R.string.cannot_read_file, lastError?.message ?: uri.toString()))
     }
 
     private fun displayName(uri: Uri): String {
@@ -608,6 +653,10 @@ class MainActivity : AppCompatActivity() {
         }
         view.findViewById<MaterialButton>(R.id.btnPickZip).setOnClickListener {
             pickZip.launch(arrayOf("application/zip", "application/x-zip-compressed"))
+        }
+        view.findViewById<MaterialButton>(R.id.btnAdvancedToggle).setOnClickListener { btn ->
+            val box = view.findViewById<View>(R.id.advancedBox)
+            box.isVisible = !box.isVisible
         }
         zipModeGroup.setOnCheckedChangeListener { _, _ ->
             zipAsIs = view.findViewById<RadioButton>(R.id.zipAsIs).isChecked
