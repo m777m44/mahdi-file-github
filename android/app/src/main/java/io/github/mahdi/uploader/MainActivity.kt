@@ -11,6 +11,7 @@ import android.text.format.Formatter
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ProgressBar
@@ -373,6 +374,10 @@ class MainActivity : AppCompatActivity() {
         mainSectionHidden()
         deviceCodeCard.isVisible = false
         loginStatus.text = ""
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE,
+        )
     }
 
     private fun mainSectionHidden() {
@@ -383,6 +388,7 @@ class MainActivity : AppCompatActivity() {
         loginSection.isVisible = false
         findViewById<View>(R.id.mainSection).isVisible = true
         headerLogin.text = Store.login(this).ifEmpty { getString(R.string.app_name) }
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 
     private fun ensureClientId(then: (String) -> Unit) {
@@ -398,7 +404,7 @@ class MainActivity : AppCompatActivity() {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_settings, null)
         val input = view.findViewById<EditText>(R.id.clientIdInput)
         input.setText(Store.clientId(this))
-        MaterialAlertDialogBuilder(this)
+        val dlg = MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.settings_title))
             .setView(view)
             .setPositiveButton(getString(R.string.save)) { _, _ ->
@@ -410,6 +416,43 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+
+        view.findViewById<MaterialButton>(R.id.btnStoreAccount).setOnClickListener {
+            val tkn = Store.token(this)
+            val login = Store.login(this)
+            if (tkn.isEmpty()) {
+                Toast.makeText(this, getString(R.string.login_first_toast), Toast.LENGTH_SHORT).show()
+            } else {
+                Store.addAccount(this, login, tkn)
+                Toast.makeText(this, getString(R.string.account_saved), Toast.LENGTH_SHORT).show()
+            }
+        }
+        view.findViewById<MaterialButton>(R.id.btnSwitchAccount).setOnClickListener {
+            val saved = Store.accounts(this)
+            if (saved.isEmpty()) {
+                Toast.makeText(this, getString(R.string.no_saved_accounts), Toast.LENGTH_SHORT).show()
+            } else {
+                val names = saved.map { it.first }.toTypedArray()
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setTitle(getString(R.string.switch_account_title))
+                    .setItems(names) { _, which ->
+                        val (login, tkn) = saved[which]
+                        Store.setToken(this@MainActivity, tkn)
+                        Store.setLogin(this@MainActivity, login)
+                        api = GitHubClient(tkn)
+                        showMain()
+                        loadRepos()
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.account_switched, login),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        dlg.dismiss()
+                    }
+                    .setNegativeButton(getString(R.string.close), null)
+                    .show()
+            }
+        }
     }
 
     private fun loginWithPat() {
@@ -425,6 +468,7 @@ class MainActivity : AppCompatActivity() {
                 val user = withContext(Dispatchers.IO) { client.getUser() }
                 Store.setToken(this@MainActivity, token)
                 Store.setLogin(this@MainActivity, user.optString("login"))
+                Store.addAccount(this@MainActivity, user.optString("login"), token)
                 api = client
                 Toast.makeText(this@MainActivity,
                     getString(R.string.welcome, user.optString("login")),
@@ -482,6 +526,7 @@ class MainActivity : AppCompatActivity() {
                             val user = withContext(Dispatchers.IO) { client.getUser() }
                             Store.setToken(this@MainActivity, token)
                             Store.setLogin(this@MainActivity, user.optString("login"))
+                            Store.addAccount(this@MainActivity, user.optString("login"), token)
                             api = client
                             Toast.makeText(this@MainActivity,
                                 getString(R.string.welcome, user.optString("login")),
@@ -1042,6 +1087,13 @@ class MainActivity : AppCompatActivity() {
             zipAsIs = view.findViewById<RadioButton>(R.id.zipAsIs).isChecked
         }
 
+        view.findViewById<MaterialButton>(R.id.btnSuggestMsg).setOnClickListener {
+            val paths = pendingDocs.map { it.relPath }
+            if (messageInput.text.isNullOrBlank()) {
+                messageInput.setText(SecurityUtils.suggestCommitMessage(paths))
+            }
+        }
+
         uploadBtn.setOnClickListener {
             val repoFull = repoInput.text.toString().trim()
             if (repoFull.isEmpty() || '/' !in repoFull) {
@@ -1061,6 +1113,63 @@ class MainActivity : AppCompatActivity() {
             uploadBtn.isEnabled = false
             allInputs.forEach { it.isEnabled = false }
             progress.isVisible = true
+
+            fun resetSheet() {
+                uploadBtn.isEnabled = true
+                allInputs.forEach { it.isEnabled = true }
+                progress.isVisible = false
+                progressLabel.text = ""
+            }
+
+            fun startUpload(
+                items: List<UploadEngine.Item>,
+                actualRepo: org.json.JSONObject,
+                targetBranch: String,
+            ) {
+                scope.launch {
+                    try {
+                        val result = UploadEngine.upload(
+                            client, repoFull, targetBranch, items, message,
+                        ) { done, total, current ->
+                            scope.launch {
+                                progress.progress = (done * 100 / total.coerceAtLeast(1))
+                                progressLabel.text = getString(R.string.uploading_current, current)
+                            }
+                        }
+
+                        val summary = buildString {
+                            append(getString(R.string.upload_done, result.uploaded.size, repoFull, targetBranch))
+                            if (result.commits > 0) append("\n").append(getString(R.string.commits_count, result.commits))
+                            if (result.failed.isNotEmpty()) {
+                                append("\n\n").append(getString(R.string.failed_files, result.failed.size))
+                                result.failed.take(10).forEach { (path, err) ->
+                                    append("\n• ").append(path).append(" — ").append(err)
+                                }
+                            }
+                        }
+                        MaterialAlertDialogBuilder(this@MainActivity)
+                            .setTitle(getString(R.string.upload_result_title))
+                            .setMessage(summary)
+                            .setPositiveButton(getString(R.string.open_repo)) { _, _ ->
+                                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(actualRepo.optString("html_url"))))
+                            }
+                            .setNegativeButton(getString(R.string.close), null)
+                            .show()
+                        dialog.dismiss()
+                        loadRepos()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (t: Throwable) {
+                        MaterialAlertDialogBuilder(this@MainActivity)
+                            .setTitle(getString(R.string.upload_failed_title))
+                            .setMessage(t.message ?: t.javaClass.simpleName)
+                            .setPositiveButton(getString(R.string.close), null)
+                            .show()
+                    } finally {
+                        resetSheet()
+                    }
+                }
+            }
 
             scope.launch {
                 try {
@@ -1082,9 +1191,9 @@ class MainActivity : AppCompatActivity() {
                                     items.add(UploadEngine.Item(path, f.length(), f))
                                 } else {
                                     val workDir = File(dirStaging(), "zipwork_${System.nanoTime()}").apply { mkdirs() }
-                                    val extracted = UploadEngine.extractZipFile(
-                                        doc.stagedFile, doc.relPath, workDir,
-                                    )
+                                    val extracted = withContext(Dispatchers.IO) {
+                                        UploadEngine.extractZipFile(doc.stagedFile, doc.relPath, workDir)
+                                    }
                                     for (item in extracted) {
                                         items.add(UploadEngine.Item(
                                             if (prefix.isEmpty()) item.path else "${prefix}/${item.path}",
@@ -1098,35 +1207,33 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
 
-                    val result = UploadEngine.upload(
-                        client, repoFull, targetBranch, items, message,
-                    ) { done, total, current ->
-                        scope.launch {
-                            progress.progress = (done * 100 / total.coerceAtLeast(1))
-                            progressLabel.text = getString(R.string.uploading_current, current)
-                        }
+                    val sensitive = withContext(Dispatchers.IO) {
+                        SecurityUtils.findSensitive(items)
                     }
-
-                    val summary = buildString {
-                        append(getString(R.string.upload_done, result.uploaded.size, repoFull, targetBranch))
-                        if (result.commits > 0) append("\n").append(getString(R.string.commits_count, result.commits))
-                        if (result.failed.isNotEmpty()) {
-                            append("\n\n").append(getString(R.string.failed_files, result.failed.size))
-                            result.failed.take(10).forEach { (path, err) ->
-                                append("\n• ").append(path).append(" — ").append(err)
+                    if (sensitive.isEmpty()) {
+                        startUpload(items, actualRepo, targetBranch)
+                    } else {
+                        val listed = sensitive.entries.take(8).joinToString("\n") { (path, reason) ->
+                            "• $path — $reason"
+                        }
+                        resetSheet()
+                        MaterialAlertDialogBuilder(this@MainActivity)
+                            .setTitle(getString(R.string.sec_sensitive_title))
+                            .setMessage(
+                                getString(R.string.sec_sensitive_msg, sensitive.size, listed) +
+                                    if (sensitive.size > 8) "\n…" else ""
+                            )
+                            .setPositiveButton(getString(R.string.sec_exclude)) { _, _ ->
+                                val safe = items.filterNot { sensitive.containsKey(it.path) }
+                                startUpload(safe, actualRepo, targetBranch)
                             }
-                        }
+                            .setNegativeButton(getString(R.string.close), null)
+                            .setNeutralButton(getString(R.string.sec_upload_anyway)) { _, _ ->
+                                startUpload(items, actualRepo, targetBranch)
+                            }
+                            .setOnDismissListener { resetSheet() }
+                            .show()
                     }
-                    MaterialAlertDialogBuilder(this@MainActivity)
-                        .setTitle(getString(R.string.upload_result_title))
-                        .setMessage(summary)
-                        .setPositiveButton(getString(R.string.open_repo)) { _, _ ->
-                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(actualRepo.optString("html_url"))))
-                        }
-                        .setNegativeButton(getString(R.string.close), null)
-                        .show()
-                    dialog.dismiss()
-                    loadRepos()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (t: Throwable) {
@@ -1135,11 +1242,7 @@ class MainActivity : AppCompatActivity() {
                         .setMessage(t.message ?: t.javaClass.simpleName)
                         .setPositiveButton(getString(R.string.close), null)
                         .show()
-                } finally {
-                    uploadBtn.isEnabled = true
-                    allInputs.forEach { it.isEnabled = true }
-                    progress.isVisible = false
-                    progressLabel.text = ""
+                    resetSheet()
                 }
             }
         }

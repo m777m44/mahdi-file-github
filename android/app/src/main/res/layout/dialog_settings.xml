@@ -30,4 +30,27 @@
             android:maxLines="1"
             android:textColor="@color/text" />
     </com.google.android.material.textfield.TextInputLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="10dp"
+        android:background="@color/card" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSwitchAccount"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/btn_switch_account"
+        android:textColor="@color/accent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnStoreAccount"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/btn_store_account"
+        android:textColor="@color/muted" />
 </LinearLayout>

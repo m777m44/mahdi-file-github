@@ -154,6 +154,15 @@
                     android:maxLines="1"
                     android:textColor="@color/text" />
             </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSuggestMsg"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="start"
+                android:text="@string/btn_suggest_msg"
+                android:textColor="@color/accent" />
         </LinearLayout>
 
         <LinearLayout

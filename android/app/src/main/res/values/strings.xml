@@ -111,4 +111,18 @@
     <string name="update_need_permission">لإكمال التثبيت اسمح بخيار «تثبيت التطبيقات غير المعروفة» لهذا التطبيق، ثم اضغط تثبيت مرة أخرى</string>
     <string name="update_download_retrying">تعذر الاتصال — جارٍ إعادة المحاولة…</string>
     <string name="update_install_failed">تعذر بدء التثبيت — تأكد من صلاحية تثبيت التطبيقات غير المعروفة</string>
+    <string name="btn_suggest_msg">✨ اقتراح رسالة تلقائية</string>
+
+    <string name="sec_sensitive_title">⚠️ ملفات حساسة مُكتشفة</string>
+    <string name="sec_sensitive_msg">كشفنا %1$d ملفاً قد يحتوي مفاتيح سرّية أو بيانات دخول (توكنات، مفاتيح خاصة، ملفات .env…). رفعها إلى مستودع عام قد يكشف حسابك للخطر:\n\n%2$s</string>
+    <string name="sec_exclude">🗑 استبعادها والرفع آمن</string>
+    <string name="sec_upload_anyway">أرفعها رغم ذلك</string>
+
+    <string name="btn_switch_account">🔄 تبديل الحساب المحفوظ</string>
+    <string name="btn_store_account">💾 حفظ الحساب الحالي في القائمة</string>
+    <string name="switch_account_title">الحسابات المحفوظة</string>
+    <string name="account_saved">تم حفظ الحساب ✅</string>
+    <string name="no_saved_accounts">لا توجد حسابات محفوظة بعد — سجّل دخولك ثم اضغط «حفظ الحساب الحالي»</string>
+    <string name="login_first_toast">سجّل دخول أولاً ثم احفظ الحساب</string>
+    <string name="account_switched">تم التبديل إلى %1$s ✅</string>
 </resources>
