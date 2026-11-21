@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}المستودعات — GitHub Uploader{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="section-head">
+    <h1>مستودعاتك ومشاريعك</h1>
+    <span class="badge">{{ repos|length }} مستودع</span>
+  </div>
+  <input id="repo-search" class="input search" type="search"
+         placeholder="🔍 ابحث باسم المستودع..." autocomplete="off">
+  <div id="repo-grid" class="repo-grid">
+    {% for repo in repos %}
+    <div class="repo-card" data-name="{{ repo.full_name|lower }}">
+      <div class="repo-title">
+        <a href="{{ repo.html_url }}" target="_blank" rel="noopener">{{ repo.full_name }}</a>
+        <span class="badge {{ 'badge-private' if repo.private else 'badge-public' }}">
+          {{ 'خاص 🔒' if repo.private else 'عام 🌍' }}
+        </span>
+      </div>
+      <p class="muted small">{{ repo.description or 'بدون وصف' }}</p>
+      <div class="repo-meta">
+        <span>الفرع: {{ repo.default_branch }}</span>
+        <span>تحديث: {{ repo.updated_at[:10] }}</span>
+      </div>
+      <button class="btn btn-primary btn-sm select-repo"
+              data-fullname="{{ repo.full_name }}"
+              data-branch="{{ repo.default_branch }}">
+        اختيار للرفع ⬆
+      </button>
+    </div>
+    {% endfor %}
+    {% if not repos %}
+      <p class="muted">لا توجد مستودعات في حسابك بعد.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card" id="upload-section">
+  <div class="section-head">
+    <h2>رفع ملفات إلى مستودع</h2>
+  </div>
+
+  <h3>أو أنشئ مستودعاً جديداً</h3>
+  <form id="create-repo-form" class="inline-form">
+    <label>اسم المستودع الجديد
+      <input class="input" type="text" name="name" placeholder="my-new-project" required>
+    </label>
+    <label>وصف (اختياري)
+      <input class="input" type="text" name="description" placeholder="وصف قصير للمشروع">
+    </label>
+    <label class="checkbox"><input type="checkbox" name="private" value="true"> مستودع خاص 🔒</label>
+    <button class="btn btn-secondary" type="submit">➕ إنشاء المستودع</button>
+  </form>
+
+  <hr class="sep">
+
+  <h3>أو اختر مستودعاً موجوداً للرفع</h3>
+  <form id="upload-form">
+    <label>المستودع (owner/name)
+      <input class="input" type="text" id="repo-fullname" name="repo"
+             placeholder="اختر من الأعلى أو اكتب username/repo" required>
+    </label>
+    <div class="grid-2">
+      <label>الفرع Branch
+        <input class="input" type="text" id="branch" name="branch"
+               placeholder="افتراضي: الفرع الأساسي">
+      </label>
+      <label>مجلد داخل المستودع (اختياري)
+        <input class="input" type="text" id="prefix" name="prefix"
+               placeholder="مثل docs أو src/images">
+      </label>
+    </div>
+    <label>رسالة الالتزام (اختياري)
+      <input class="input" type="text" id="message" name="message"
+             placeholder="إضافة ملفات جديدة">
+    </label>
+
+    <div class="pickers">
+      <label class="picker">
+        <input type="file" id="input-files" name="files" multiple>
+        📄 أي ملفات (صيغ متعددة)
+      </label>
+      <label class="picker">
+        <input type="file" id="input-folder" name="files" webkitdirectory>
+        📂 مجلد كامل (بكل محتوياته)
+      </label>
+      <label class="picker">
+        <input type="file" id="input-zip" name="files" accept=".zip">
+        🗜 ملف zip
+      </label>
+    </div>
+
+    <div class="zip-modes" id="zip-modes" hidden>
+      وملفات الـ zip:
+      <label class="checkbox"><input type="radio" name="zip_mode" value="extract" checked> فك الضغط ورفع المحتويات</label>
+      <label class="checkbox"><input type="radio" name="zip_mode" value="asis"> رفع الـ zip كما هو</label>
+    </div>
+
+    <div id="picked-list" class="picked-list"></div>
+
+    <div class="progress-wrap" id="progress-wrap" hidden>
+      <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
+      <div class="muted small" id="progress-label">جارٍ الإرسال...</div>
+    </div>
+
+    <button class="btn btn-primary btn-big" type="submit" id="upload-btn">⬆ ارفع إلى المستودع</button>
+  </form>
+
+  <div id="result" class="result" hidden></div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='app.js') }}"></script>{% endblock %}

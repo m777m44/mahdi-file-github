@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}GitHub Uploader{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⬆</span>
+      <span>GitHub Uploader</span>
+    </div>
+    {% if user %}
+    <div class="userbox">
+      <img src="{{ user.avatar }}" alt="" class="avatar">
+      <span class="login">{{ user.login }}</span>
+      <a class="btn btn-ghost" href="{{ url_for('logout') }}">خروج</a>
+    </div>
+    {% endif %}
+  </header>
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="footer">تطبيق محلي — تسجيل دخول رسمي عبر GitHub OAuth</footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

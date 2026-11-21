@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}تسجيل الدخول — GitHub Uploader{% endblock %}
+{% block content %}
+<section class="card center-card">
+  <h1>الرفع إلى حسابك على GitHub</h1>
+  <p class="muted">تسجيل دخول رسمي عبر GitHub OAuth متصفحك، لرفع أي ملفات 📂 أو أرشيف zip أو أي صيغة أخرى إلى مستودعاتك.</p>
+
+  {% if needs_setup %}
+    <div class="setup">
+      <h2>إعداد لمرة واحدة: أنشئ OAuth App في GitHub</h2>
+      <ol class="rtl-steps">
+        <li>افتح <a href="https://github.com/settings/developers" target="_blank" rel="noopener">Settings ← Developer settings ← OAuth Apps ← New OAuth App</a></li>
+        <li>حقل <b>Application name</b>: اكتب <code>GitHub Uploader</code></li>
+        <li>حقل <b>Homepage URL</b>: اكتب <code>http://localhost:5000</code></li>
+        <li>حقل <b>Authorization callback URL</b>: اكتب <code>http://localhost:5000/callback</code></li>
+        <li>بعد إنشاء التطبيق اضغط <b>Generate a new client secret</b> وانسخ الـ Client ID والـ Client Secret هنا</li>
+      </ol>
+      <form method="post" action="{{ url_for('setup') }}" class="setup-form">
+        <label>Client ID
+          <input type="text" name="client_id" value="{{ client_id }}" placeholder="مثل Iv1.xxxxxxxxxxxxxxxx" required>
+        </label>
+        <label>Client Secret
+          <input type="password" name="client_secret" placeholder="يُحفظ محلياً في جهازك فقط" required>
+        </label>
+        <button class="btn btn-primary" type="submit">حفظ الإعداد</button>
+      </form>
+    </div>
+  {% else %}
+    <a class="btn btn-primary btn-big" href="{{ url_for('login') }}">
+      🔐 تسجيل الدخول عبر GitHub
+    </a>
+    <p class="muted small">سيتم فتح صفحة github.com الرسمية وتطلب منك الموافقة بصلاحية الوصول إلى مستودعاتك.</p>
+  {% endif %}
+</section>
+{% endblock %}

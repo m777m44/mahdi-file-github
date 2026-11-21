@@ -1,0 +1,146 @@
+:root {
+  --bg: #0d1117;
+  --card: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --primary: #238636;
+  --primary-hover: #2ea043;
+  --secondary: #21262d;
+  --error: #f85149;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+main { flex: 1; width: 100%; max-width: 1000px; margin: 0 auto; padding: 24px 16px; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.05rem; }
+.logo {
+  background: var(--primary); border-radius: 8px; width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.userbox { display: flex; align-items: center; gap: 10px; }
+.avatar { width: 32px; height: 32px; border-radius: 50%; }
+.login { font-weight: 600; }
+
+.footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 16px; }
+
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 24px; margin-bottom: 24px;
+}
+.center-card { max-width: 640px; margin: 48px auto; text-align: center; }
+.section-head { display: flex; align-items: center; gap: 12px; }
+
+h1 { font-size: 1.5rem; margin: 0 0 8px; }
+h2 { font-size: 1.2rem; margin: 0; }
+h3 { font-size: 1rem; margin: 20px 0 10px; color: var(--muted); }
+
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+.badge {
+  background: var(--secondary); border: 1px solid var(--border);
+  border-radius: 999px; font-size: .75rem; padding: 3px 10px;
+}
+.badge-private { border-color: #a371f7; color: #d2a8ff; }
+.badge-public { border-color: #3fb950; color: #7ee787; }
+
+.search { width: 100%; margin: 14px 0; font-size: 1rem; }
+
+.input {
+  width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; font-size: .95rem; margin-top: 4px;
+}
+.input:focus { outline: none; border-color: var(--primary); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  padding: 9px 16px; font-size: .95rem; color: var(--text);
+  background: var(--secondary); text-decoration: none; font-family: inherit;
+}
+.btn:hover { filter: brightness(1.15); }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn-primary { background: var(--primary); border-color: rgba(240,246,252,.1); color: #fff; }
+.btn-secondary { background: #388bfd1a; border-color: #388bfd; color: #79c0ff; }
+.btn-ghost { background: transparent; }
+.btn-big { font-size: 1.1rem; padding: 14px 26px; width: 100%; margin-top: 14px; }
+.btn-sm { padding: 6px 12px; font-size: .85rem; }
+
+.flash { border-radius: 8px; padding: 12px 16px; margin: 16px 0; border: 1px solid; }
+.flash-error { border-color: var(--error); background: #f851491a; color: #ffa198; }
+
+.setup { text-align: right; margin-top: 24px; }
+.rtl-steps { line-height: 2; }
+.setup-form label { display: block; margin: 12px 0; }
+.setup-form input {
+  width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin-top: 4px;
+}
+
+.repo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.repo-card {
+  border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+  display: flex; flex-direction: column; gap: 8px; background: var(--bg);
+}
+.repo-card.hidden { display: none; }
+.repo-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.repo-title a { color: #79c0ff; font-weight: 700; text-decoration: none; word-break: break-all; }
+.repo-title a:hover { text-decoration: underline; }
+.repo-meta { display: flex; gap: 14px; color: var(--muted); font-size: .8rem; }
+
+.inline-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.inline-form label { flex: 1 1 220px; display: flex; flex-direction: column; font-size: .85rem; color: var(--muted); }
+.checkbox { display: inline-flex; align-items: center; gap: 6px; }
+
+.sep { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+#upload-form label { display: block; margin: 12px 0; font-size: .85rem; color: var(--muted); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 600px) { .grid-2 { grid-template-columns: 1fr; } }
+
+.pickers { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 16px 0 4px; }
+.picker {
+  border: 2px dashed var(--border); border-radius: 10px; padding: 18px;
+  text-align: center; cursor: pointer; font-size: .95rem; font-weight: 600;
+  transition: border-color .15s; position: relative; overflow: hidden;
+}
+.picker:hover { border-color: var(--primary); }
+.picker input[type=file] {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer;
+}
+.zip-modes { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; color: var(--muted); font-size: .85rem; }
+
+.picked-list { max-height: 160px; overflow: auto; font-size: .8rem; color: var(--muted); margin: 8px 0; }
+.picked-list div { padding: 2px 0; border-bottom: 1px dashed var(--border); }
+
+.progress-wrap { margin: 14px 0; }
+.progress { height: 10px; background: var(--secondary); border-radius: 999px; overflow: hidden; }
+.progress-bar {
+  height: 100%; width: 0%; background: var(--primary);
+  border-radius: 999px; transition: width .2s;
+}
+
+.result { margin-top: 18px; border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.result.ok { border-color: #3fb950; }
+.result.fail { border-color: var(--error); }
+.result ul { padding-inline-start: 20px; max-height: 240px; overflow: auto; }
+.result .err { color: #ffa198; }
