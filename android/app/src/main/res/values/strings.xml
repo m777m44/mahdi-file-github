@@ -82,4 +82,18 @@
     <string name="prefix_optional_hint">مجلد داخل المستودع — اختياري، مثال: صوري أو docs</string>
     <string name="message_optional_hint">رسالة الالتزام — اختياري</string>
     <string name="empty_or_unreadable">الملف فارغ أو لا يمكن قراءته: %1$s</string>
+    <string name="btn_pick_url">🌐 رفع من رابط مباشر (من الإنترنت)</string>
+    <string name="url_dialog_title">رفع ملف من رابط</string>
+    <string name="url_dialog_hint">الصق رابط الملف المباشر (مثال: https://files.catbox.moe/1zs3xv.zip) وسيحمّله التطبيق ثم يرفعه إلى المستودع — اعتذر عن فشل القراءة للملفات المؤقتة، يمكنك أيضاً نسخ الملف إلى تطبيق الملفات ثم اختياره.</string>
+    <string name="url_dialog_field">https:// …</string>
+    <string name="btn_download">⬇ تحميل وتجهيز للرفع</string>
+    <string name="url_invalid">الصق رابطاً صحيحاً يبدأ بـ http أو https</string>
+    <string name="downloading">جارٍ تحميل الملف من الرابط…</string>
+    <string name="downloading_progress">جارٍ التحميل: %1$s / %2$s</string>
+    <string name="download_failed_code">فشل تحميل الملف من الرابط (رمز %1$d)</string>
+    <string name="download_empty">الرابط لم يُرجع بيانات</string>
+    <string name="download_empty_file">الملف المحمّل فارغ: %1$s</string>
+    <string name="download_done_toast">تم تجهيز الملف للرفع: %1$s ✅</string>
+    <string name="download_failed">فشل التحميل من الرابط</string>
+    <string name="stage_retry_hint">💡 حل بديل مؤكد: انسخ الملف إلى تطبيق «الملفات» على هاتفك (مجلد التنزيلات) ثم اختره من هناك، أو استخدم «رفع من رابط».</string>
 </resources>

@@ -586,6 +586,132 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------ upload
 
+    private fun fileNameFromUrl(url: String): String {
+        val cleaned = url.substringBefore("#").substringBefore("?")
+        val name = cleaned.substringAfterLast('/')
+        return (android.net.Uri.decode(name).ifEmpty { "download" })
+    }
+
+    private fun showUrlDownloadDialog(sheetView: View) {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_upload_url, null)
+        val input = dialogView.findViewById<EditText>(R.id.urlInput)
+        try {
+            val clip = getSystemService(android.content.ClipboardManager::class.java)
+                ?.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
+            if (clip.startsWith("http://") || clip.startsWith("https://")) {
+                input.setText(clip)
+            }
+        } catch (_: Exception) {
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.url_dialog_title))
+            .setView(dialogView)
+            .setPositiveButton(getString(R.string.btn_download)) { _, _ ->
+                val url = input.text.toString().trim()
+                if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                    Toast.makeText(this, getString(R.string.url_invalid), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                downloadFromUrl(url, sheetView)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun downloadFromUrl(url: String, sheetView: View) {
+        val progress = sheetView.findViewById<LinearProgressIndicator>(R.id.uploadProgress)
+        val progressLabel = sheetView.findViewById<TextView>(R.id.progressLabel)
+        val pickBtns = listOf<android.view.View>(
+            sheetView.findViewById(R.id.btnPickFiles),
+            sheetView.findViewById(R.id.btnPickFolder),
+            sheetView.findViewById(R.id.btnPickZip),
+            sheetView.findViewById(R.id.btnPickUrl),
+        )
+        pickBtns.forEach { it.isEnabled = false }
+        progress.isVisible = true
+        progressLabel.text = getString(R.string.downloading)
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val http = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                val request = okhttp3.Request.Builder().url(url).build()
+                http.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        throw Exception(getString(R.string.download_failed_code, resp.code))
+                    }
+                    val name = fileNameFromUrl(url)
+                    val mediaType = resp.header("Content-Disposition")
+                    val finalName = mediaType
+                        ?.substringAfterLast('*')
+                        ?.substringAfter("=", "")
+                        ?.trim('"', ' ')
+                        ?.ifEmpty { null }
+                        ?: name
+                    val kind = if (finalName.endsWith(".zip", ignoreCase = true)) Kind.ZIP else Kind.FILE
+                    val target = File(dirStaging(), UploadEngine.stableName(finalName))
+                    val body = resp.body ?: throw Exception(getString(R.string.download_empty))
+                    val total = body.contentLength()
+                    var copied = 0L
+                    body.byteStream().use { input ->
+                        target.outputStream().use { output ->
+                            val buffer = ByteArray(1 shl 17)
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read == -1) break
+                                output.write(buffer, 0, read)
+                                copied += read
+                                if (total > 0 && copied % (4L * 1024 * 1024) < buffer.size.toLong()) {
+                                    runOnUiThread {
+                                        progressLabel.text = getString(
+                                            R.string.downloading_progress,
+                                            Formatter.formatShortFileSize(this@MainActivity, copied),
+                                            Formatter.formatShortFileSize(this@MainActivity, total),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (target.length() == 0L) {
+                        target.delete()
+                        throw Exception(getString(R.string.download_empty_file, finalName))
+                    }
+                    runOnUiThread {
+                        pendingDocs.removeAll { it.kind == Kind.ZIP }
+                        pendingDocs.add(Pending(target, kind, finalName, target.length()))
+                        pickErrors.clear()
+                        refreshPickedSummary()
+                        updateZipRowVisibility(sheetView)
+                        Toast.makeText(this@MainActivity,
+                            getString(R.string.download_done_toast, finalName),
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                runOnUiThread {
+                    pickErrors = mutableListOf(url to (e.message ?: getString(R.string.download_failed)))
+                    refreshPickedSummary()
+                }
+            } finally {
+                runOnUiThread {
+                    pickBtns.forEach { it.isEnabled = true }
+                    progress.isVisible = false
+                    progressLabel.text = ""
+                }
+            }
+        }
+    }
+
+    private fun updateZipRowVisibility(sheetView: View) {
+        sheetView.findViewById<View>(R.id.zipModeRow).isVisible =
+            pendingDocs.any { it.kind == Kind.ZIP }
+    }
+
     private fun refreshPickedSummary() {
         val sheet = uploadSheet ?: return
         val summary = sheet.findViewById<TextView>(R.id.pickedSummary) ?: return
@@ -611,6 +737,7 @@ class MainActivity : AppCompatActivity() {
         if (pickErrors.isNotEmpty()) {
             sb.append('\n').append(getString(R.string.stage_errors, pickErrors.size)).append('\n')
             pickErrors.forEach { (name, err) -> sb.append("⚠ ").append(name).append(": ").append(err).append('\n') }
+            sb.append(getString(R.string.stage_retry_hint)).append('\n')
         }
         summary.text = sb.toString()
     }
@@ -657,6 +784,9 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<MaterialButton>(R.id.btnAdvancedToggle).setOnClickListener { btn ->
             val box = view.findViewById<View>(R.id.advancedBox)
             box.isVisible = !box.isVisible
+        }
+        view.findViewById<MaterialButton>(R.id.btnPickUrl).setOnClickListener {
+            showUrlDownloadDialog(view)
         }
         zipModeGroup.setOnCheckedChangeListener { _, _ ->
             zipAsIs = view.findViewById<RadioButton>(R.id.zipAsIs).isChecked
