@@ -1,9 +1,13 @@
 package io.github.mahdi.uploader
 
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.TextWatcher
@@ -71,6 +75,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var reposList: RecyclerView
     private lateinit var reposProgress: ProgressBar
     private lateinit var fabCreateRepo: com.google.android.material.floatingactionbutton.FloatingActionButton
+    private lateinit var swipeRepos: androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+    private lateinit var emptyRepos: TextView
 
     private var uploadSheet: BottomSheetDialog? = null
     private var stagingDir: File? = null
@@ -341,6 +347,8 @@ class MainActivity : AppCompatActivity() {
         reposList = findViewById(R.id.reposList)
         reposProgress = findViewById(R.id.reposProgress)
         fabCreateRepo = findViewById(R.id.fabCreateRepo)
+        swipeRepos = findViewById(R.id.swipeRepos)
+        emptyRepos = findViewById(R.id.emptyRepos)
     }
 
     private fun setupListeners() {
@@ -365,6 +373,33 @@ class MainActivity : AppCompatActivity() {
             }
         })
         fabCreateRepo.setOnClickListener { showCreateRepoDialog() }
+
+        swipeRepos.setColorSchemeColors(getColor(R.color.accent_bright))
+        swipeRepos.setProgressBackgroundColorSchemeColor(getColor(R.color.card))
+        swipeRepos.setOnRefreshListener {
+            haptic()
+            loadRepos()
+        }
+        reposList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                val lm = rv.layoutManager as? LinearLayoutManager ?: return
+                val first = lm.findFirstCompletelyVisibleItemPosition()
+                if (dy > 8 && first > 0) fabCreateRepo.hide()
+                else if (dy < -8 || first <= 0) fabCreateRepo.show()
+            }
+        })
+    }
+
+    private fun haptic(long: Boolean = false) {
+        val v = getSystemService(Vibrator::class.java) ?: return
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            v.vibrate(
+                VibrationEffect.createOneShot(
+                    if (long) 60L else 20L,
+                    if (long) VibrationEffect.DEFAULT_AMPLITUDE else 120,
+                )
+            )
+        }
     }
 
     // ------------------------------------------------------------ login
@@ -374,6 +409,8 @@ class MainActivity : AppCompatActivity() {
         mainSectionHidden()
         deviceCodeCard.isVisible = false
         loginStatus.text = ""
+        loginSection.alpha = 0f
+        loginSection.animate().alpha(1f).setDuration(320).start()
         window.setFlags(
             WindowManager.LayoutParams.FLAG_SECURE,
             WindowManager.LayoutParams.FLAG_SECURE,
@@ -386,7 +423,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun showMain() {
         loginSection.isVisible = false
-        findViewById<View>(R.id.mainSection).isVisible = true
+        val main = findViewById<View>(R.id.mainSection)
+        main.isVisible = true
+        main.alpha = 0f
+        main.translationY = 28f
+        main.animate().alpha(1f).translationY(0f).setDuration(300)
+            .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).start()
         headerLogin.text = Store.login(this).ifEmpty { getString(R.string.app_name) }
         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
@@ -417,6 +459,10 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(android.R.string.cancel, null)
             .show()
 
+        view.findViewById<MaterialButton>(R.id.btnOpenLog).setOnClickListener {
+            ActivityLogDialog.show(this@MainActivity)
+            dlg.dismiss()
+        }
         view.findViewById<MaterialButton>(R.id.btnStoreAccount).setOnClickListener {
             val tkn = Store.token(this)
             val login = Store.login(this)
@@ -575,6 +621,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG).show()
             } finally {
                 reposProgress.isVisible = false
+                swipeRepos.isRefreshing = false
             }
         }
     }
@@ -588,6 +635,9 @@ class MainActivity : AppCompatActivity() {
             adapter!!.replace(repos)
         }
         adapter!!.filter(repoSearch.text?.toString().orEmpty())
+        reposList.scheduleLayoutAnimation()
+        emptyRepos.isVisible = repos.isEmpty()
+        if (repos.isNotEmpty()) haptic()
     }
 
     private fun showCreateRepoDialog() {
@@ -1128,15 +1178,24 @@ class MainActivity : AppCompatActivity() {
             ) {
                 scope.launch {
                     try {
+                        val startAt = System.currentTimeMillis()
                         val result = UploadEngine.upload(
                             client, repoFull, targetBranch, items, message,
                         ) { done, total, current ->
+                            val elapsedSec = ((System.currentTimeMillis() - startAt) / 1000).toInt()
+                            val mm = (elapsedSec / 60).toString().padStart(2, '0')
+                            val ss = (elapsedSec % 60).toString().padStart(2, '0')
                             scope.launch {
                                 progress.progress = (done * 100 / total.coerceAtLeast(1))
-                                progressLabel.text = getString(R.string.uploading_current, current)
+                                progressLabel.text = getString(R.string.upload_progress_count, done, total, "$mm:$ss") + "\n" + current
                             }
                         }
 
+                        ActivityLog.log(
+                            this@MainActivity, repoFull, targetBranch,
+                            result.uploaded.size, result.failed.size,
+                        )
+                        haptic(result.failed.isEmpty())
                         val summary = buildString {
                             append(getString(R.string.upload_done, result.uploaded.size, repoFull, targetBranch))
                             if (result.commits > 0) append("\n").append(getString(R.string.commits_count, result.commits))
@@ -1152,6 +1211,11 @@ class MainActivity : AppCompatActivity() {
                             .setMessage(summary)
                             .setPositiveButton(getString(R.string.open_repo)) { _, _ ->
                                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(actualRepo.optString("html_url"))))
+                            }
+                            .setNeutralButton(getString(R.string.copy_report)) { _, _ ->
+                                val cm = getSystemService(ClipboardManager::class.java)
+                                cm?.setPrimaryClip(ClipData.newPlainText("report", summary))
+                                Toast.makeText(this@MainActivity, getString(R.string.copied), Toast.LENGTH_SHORT).show()
                             }
                             .setNegativeButton(getString(R.string.close), null)
                             .show()

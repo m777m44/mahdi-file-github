@@ -125,4 +125,17 @@
     <string name="no_saved_accounts">لا توجد حسابات محفوظة بعد — سجّل دخولك ثم اضغط «حفظ الحساب الحالي»</string>
     <string name="login_first_toast">سجّل دخول أولاً ثم احفظ الحساب</string>
     <string name="account_switched">تم التبديل إلى %1$s ✅</string>
+    <string name="repos_empty">لا توجد مستودعات ظاهرة — اسحب الشاشة للتحديث أو أنشئ مستودعاً جديداً ⚡</string>
+
+    <string name="btn_open_log">📊 سجل العمليات والإحصائيات</string>
+    <string name="stat_uploads">عمليات رفع</string>
+    <string name="stat_files">ملف مرفوع</string>
+    <string name="stat_rate">نسبة النجاح</string>
+    <string name="log_title">📈 سجل العمليات</string>
+    <string name="log_clear">🗑 مسح السجل</string>
+    <string name="log_empty">لا توجد عمليات رفع بعد — ابدأ أول رفع وسيظهر هنا</string>
+
+    <string name="copy_report">نسخ التقرير 📋</string>
+    <string name="copied">تم النسخ إلى الحافظة ✅</string>
+    <string name="upload_progress_count">%1$d من %2$s ملف — ⏱ %3$s</string>
 </resources>
