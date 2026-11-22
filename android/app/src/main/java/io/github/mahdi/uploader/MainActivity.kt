@@ -391,14 +391,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun haptic(long: Boolean = false) {
-        val v = getSystemService(Vibrator::class.java) ?: return
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            v.vibrate(
-                VibrationEffect.createOneShot(
-                    if (long) 60L else 20L,
-                    if (long) VibrationEffect.DEFAULT_AMPLITUDE else 120,
+        try {
+            val v = getSystemService(Vibrator::class.java) ?: return
+            if (v.hasVibrator()) {
+                v.vibrate(
+                    VibrationEffect.createOneShot(
+                        if (long) 60L else 20L,
+                        if (long) VibrationEffect.DEFAULT_AMPLITUDE else 120,
+                    )
                 )
-            )
+            }
+        } catch (_: Exception) {
         }
     }
 
