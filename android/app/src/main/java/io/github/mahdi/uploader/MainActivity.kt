@@ -411,6 +411,7 @@ class MainActivity : AppCompatActivity() {
         loginStatus.text = ""
         loginSection.alpha = 0f
         loginSection.animate().alpha(1f).setDuration(320).start()
+        startLogoPulse()
         window.setFlags(
             WindowManager.LayoutParams.FLAG_SECURE,
             WindowManager.LayoutParams.FLAG_SECURE,
@@ -430,7 +431,46 @@ class MainActivity : AppCompatActivity() {
         main.animate().alpha(1f).translationY(0f).setDuration(300)
             .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).start()
         headerLogin.text = Store.login(this).ifEmpty { getString(R.string.app_name) }
+        findViewById<android.widget.ImageView>(R.id.loginLogo).animate().cancel()
+        findViewById<android.widget.ImageView>(R.id.loginLogo).scaleX = 1f
+        findViewById<android.widget.ImageView>(R.id.loginLogo).scaleY = 1f
+        refreshHero()
         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    private fun startLogoPulse() {
+        val logo = findViewById<android.widget.ImageView>(R.id.loginLogo)
+        val anim = android.view.animation.ScaleAnimation(
+            1f, 1.07f, 1f, 1.07f,
+            android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
+            android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
+        ).apply {
+            duration = 1400
+            repeatMode = android.view.animation.Animation.REVERSE
+            repeatCount = android.view.animation.Animation.INFINITE
+            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+        }
+        logo.startAnimation(anim)
+    }
+
+    private fun animateCount(tv: TextView, target: Int, suffix: String = "") {
+        val start = tv.text.toString().filter { ch -> ch.isDigit() }.toIntOrNull() ?: 0
+        val anim = android.animation.ValueAnimator.ofInt(start, target)
+        anim.duration = 700
+        anim.addUpdateListener { tv.text = "${it.animatedValue}$suffix" }
+        anim.start()
+    }
+
+    private fun refreshHero() {
+        val login = Store.login(this).ifEmpty { "GitHub" }
+        findViewById<TextView>(R.id.avatarText).text = login.take(1).uppercase()
+        findViewById<TextView>(R.id.heroName).text = login
+        val (uploads, files, rate) = ActivityLog.stats(this)
+        animateCount(findViewById(R.id.chipReposVal), repos.size)
+        animateCount(findViewById(R.id.chipUploadsVal), files)
+        animateCount(findViewById(R.id.chipRateVal), rate, "%")
+        findViewById<TextView>(R.id.heroSub).text =
+            getString(R.string.hero_uploads_count, uploads)
     }
 
     private fun ensureClientId(then: (String) -> Unit) {
@@ -459,6 +499,15 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(android.R.string.cancel, null)
             .show()
 
+        view.findViewById<MaterialButton>(R.id.btnShareApp).setOnClickListener {
+            val send = Intent(Intent.ACTION_SEND)
+            send.type = "text/plain"
+            send.putExtra(
+                Intent.EXTRA_TEXT,
+                getString(R.string.share_text, "https://github.com/m777m44/mahdi-file-github"),
+            )
+            startActivity(Intent.createChooser(send, getString(R.string.share_app)))
+        }
         view.findViewById<MaterialButton>(R.id.btnOpenLog).setOnClickListener {
             ActivityLogDialog.show(this@MainActivity)
             dlg.dismiss()
@@ -637,6 +686,7 @@ class MainActivity : AppCompatActivity() {
         adapter!!.filter(repoSearch.text?.toString().orEmpty())
         reposList.scheduleLayoutAnimation()
         emptyRepos.isVisible = repos.isEmpty()
+        refreshHero()
         if (repos.isNotEmpty()) haptic()
     }
 
@@ -942,6 +992,16 @@ class MainActivity : AppCompatActivity() {
                         percentLabel.text = getString(R.string.update_downloaded)
                         btnNow.text = getString(R.string.update_btn_do_install)
                         btnNow.isEnabled = true
+                        haptic()
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.update_auto_installing),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                        scope.launch {
+                            delay(700)
+                            installUpdate(apk)
+                        }
                     } else {
                         percentLabel.isVisible = false
                         progress.isVisible = false

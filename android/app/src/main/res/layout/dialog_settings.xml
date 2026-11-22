@@ -39,6 +39,14 @@
         android:background="@color/card" />
 
     <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnShareApp"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/share_app"
+        android:textColor="@color/link" />
+
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btnOpenLog"
         style="@style/Widget.Material3.Button.TonalButton"
         android:layout_width="match_parent"

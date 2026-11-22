@@ -138,4 +138,9 @@
     <string name="copy_report">نسخ التقرير 📋</string>
     <string name="copied">تم النسخ إلى الحافظة ✅</string>
     <string name="upload_progress_count">%1$d من %2$s ملف — ⏱ %3$s</string>
+    <string name="chip_repos">مستودعات</string>
+    <string name="hero_uploads_count">إجمالي عمليات الرفع عبر التطبيق: %1$d</string>
+    <string name="share_app">📤 مشاركة التطبيق مع أصدقائك</string>
+    <string name="share_text">⭐ حمّل تطبيق MAHDI FILE GITHUB — ارفع أي ملفات أو مجلدات إلى حساب GitHub من هاتفك مباشرة:\n%1$s</string>
+    <string name="update_auto_installing">جارٍ فتح مثبِّت النظام… اضغط «تثبيت» في النافذة المنبثقة</string>
 </resources>
