@@ -78,7 +78,7 @@
     <string name="stage_errors">⚠ فشل تجهيز %1$d ملف:</string>
     <string name="repo_meta">الفرع: %1$s  •  آخر تحديث: %2$s</string>
     <string name="advanced_options">خيارات متقدمة (اختياري)</string>
-    <string name="branch_optional_hint">الفرع (Branch)</string>
+    <string name="branch_optional_hint">اختياري</string>
     <string name="prefix_optional_hint">المجلد الفرعي داخل المستودع</string>
     <string name="message_optional_hint">رسالة الالتزام (Commit)</string>
     <string name="empty_or_unreadable">الملف فارغ أو لا يمكن قراءته: %1$s</string>

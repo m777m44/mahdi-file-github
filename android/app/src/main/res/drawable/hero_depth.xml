@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- طبقة عمق 3D فوق بطاقة الإحصائيات: كرات متوهجة + شعاع ضوئي + حلقات -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <!-- توهج كبير يمين البطاقة -->
+    <path
+        android:pathData="M275,90 m-95,0 a95,95 0 1,1 190,0 a95,95 0 1,1 -190,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="275" android:centerY="90"
+                android:gradientRadius="95">
+                <item android:offset="0.0" android:color="#3DFFFFFF" />
+                <item android:offset="0.55" android:color="#17FFFFFF" />
+                <item android:offset="1.0" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- توهج أزرق فاتح يسار البطاقة -->
+    <path
+        android:pathData="M35,140 m-80,0 a80,80 0 1,1 160,0 a80,80 0 1,1 -160,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="35" android:centerY="140"
+                android:gradientRadius="80">
+                <item android:offset="0.0" android:color="#2DB6F0FF" />
+                <item android:offset="0.6" android:color="#12B6F0FF" />
+                <item android:offset="1.0" android:color="#00B6F0FF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- كرة 3D: قاعدة داكنة -->
+    <path
+        android:fillColor="#3300091A"
+        android:pathData="M84,44 m-22,0 a22,22 0 1,1 44,0 a22,22 0 1,1 -44,0 Z" />
+    <!-- كرة 3D: جسم متدرج -->
+    <path android:pathData="M84,41 m-20,0 a20,20 0 1,1 40,0 a20,20 0 1,1 -40,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="78" android:centerY="34"
+                android:gradientRadius="34">
+                <item android:offset="0.0" android:color="#66FFFFFF" />
+                <item android:offset="0.45" android:color="#2BFFFFFF" />
+                <item android:offset="1.0" android:color="#14FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- كرة 3D: بريق القمة -->
+    <path
+        android:fillColor="#66FFFFFF"
+        android:pathData="M77,33 m-7,0 a7,7 0 1,1 14,0 a7,7 0 1,1 -14,0 Z" />
+
+    <!-- كرة أصغر أسفل يمين -->
+    <path
+        android:fillColor="#2600091A"
+        android:pathData="M252,134 m-14,0 a14,14 0 1,1 28,0 a14,14 0 1,1 -28,0 Z" />
+    <path android:pathData="M252,132.5 m-12.5,0 a12.5,12.5 0 1,1 25,0 a12.5,12.5 0 1,1 -25,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="248" android:centerY="128"
+                android:gradientRadius="22">
+                <item android:offset="0.0" android:color="#4DFFFFFF" />
+                <item android:offset="1.0" android:color="#12FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- حلقة رفيعة حول الكرة الكبيرة -->
+    <path
+        android:pathData="M84,41 m-26,0 a26,26 0 1,1 52,0 a26,26 0 1,1 -52,0 Z"
+        android:strokeColor="#26FFFFFF"
+        android:strokeWidth="1.2"
+        android:fillColor="#00000000" />
+
+    <!-- شعاع ضوئي قطري عابر -->
+    <path android:pathData="M40,-10 L70,-14 L290,190 L260,194 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="55" android:startY="-12"
+                android:endX="275" android:endY="192">
+                <item android:offset="0.0" android:color="#24FFFFFF" />
+                <item android:offset="1.0" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>
