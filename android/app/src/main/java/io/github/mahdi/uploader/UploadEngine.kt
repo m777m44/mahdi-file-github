@@ -14,9 +14,9 @@ import java.util.zip.ZipFile
 object UploadEngine {
 
     const val HARD_LIMIT = 100L * 1024 * 1024      // GitHub hard limit per file
-    private const val SAFE_LIMIT = 90L * 1024 * 1024
-    private const val BLOB_CONCURRENCY = 4
-    private const val COMMIT_PAUSE_MS = 1_000L
+    private const val SAFE_LIMIT = 98L * 1024 * 1024   // نرفع حتى 98 ميغابايت (حد GitHub الفعلي 100)
+    private const val BLOB_CONCURRENCY = 5
+    private const val COMMIT_PAUSE_MS = 400L
     private const val RATE_LIMIT_COOLDOWN_MS = 60_000L
     private const val FINAL_RETRY_PASSES = 2
     private const val TRANSIENT_RETRIES = 2
@@ -195,17 +195,43 @@ object UploadEngine {
                 }
             }
             if (tree.length() == 0) return false
-            val newTree = api.createTree(repoFullName, treeSha, tree)
-            val commit = api.createCommit(
-                repoFullName, "$commitMessage (${tree.length()} ملف)",
-                newTree.getString("sha"), listOf(headSha),
-            )
-            api.updateRef(repoFullName, branch, commit.getString("sha"))
-            headSha = commit.getString("sha")
-            treeSha = newTree.getString("sha")
-            commits++
-            uploaded.addAll(paths)
-            return true
+            // 1.9.4: عند 422 «Update is not a fast forward» نعيد مزامنة الرأس ثم نعيد الالتزام (حتى 3 محاولات)
+            var lastError: GitHubClient.GitHubException? = null
+            for (attempt in 0 until 3) {
+                try {
+                    val newTree = api.createTree(repoFullName, treeSha, tree)
+                    val commit = api.createCommit(
+                        repoFullName, "$commitMessage (${tree.length()} ملف)",
+                        newTree.getString("sha"), listOf(headSha),
+                    )
+                    api.updateRef(repoFullName, branch, commit.getString("sha"))
+                    headSha = commit.getString("sha")
+                    treeSha = newTree.getString("sha")
+                    commits++
+                    uploaded.addAll(paths)
+                    return true
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: GitHubClient.GitHubException) {
+                    lastError = e
+                    val fastForward = e.code == 422 &&
+                        (e.message ?: "").contains("fast forward", ignoreCase = true)
+                    if (!fastForward) throw e
+                    // إعادة المزامنة: قراءة المرجع الحالي وتحديث الرأس والشجرة ثم إعادة المحاولة
+                    try {
+                        val ref = api.getRef(repoFullName, branch)
+                        val fresh = api.getCommit(
+                            repoFullName, ref.getJSONObject("object").getString("sha"),
+                        )
+                        headSha = fresh.getString("sha")
+                        treeSha = fresh.getJSONObject("tree").getString("sha")
+                    } catch (_: Exception) {
+                        // نُبقي القيم القديمة ونحاول مرة أخرى على أي حال
+                    }
+                    delay(600L * (attempt + 1))
+                }
+            }
+            throw lastError ?: IllegalStateException("فشل الالتزام")
         }
 
         val total = inputItems.size

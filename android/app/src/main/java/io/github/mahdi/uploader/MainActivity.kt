@@ -1509,33 +1509,8 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
 
-                    val sensitive = withContext(Dispatchers.IO) {
-                        SecurityUtils.findSensitive(items)
-                    }
-                    if (sensitive.isEmpty()) {
-                        startUpload(items, actualRepo, targetBranch)
-                    } else {
-                        val listed = sensitive.entries.take(8).joinToString("\n") { (path, reason) ->
-                            "• $path — $reason"
-                        }
-                        resetSheet()
-                        MaterialAlertDialogBuilder(this@MainActivity)
-                            .setTitle(getString(R.string.sec_sensitive_title))
-                            .setMessage(
-                                getString(R.string.sec_sensitive_msg, sensitive.size, listed) +
-                                    if (sensitive.size > 8) "\n…" else ""
-                            )
-                            .setPositiveButton(getString(R.string.sec_exclude)) { _, _ ->
-                                val safe = items.filterNot { sensitive.containsKey(it.path) }
-                                startUpload(safe, actualRepo, targetBranch)
-                            }
-                            .setNegativeButton(getString(R.string.close), null)
-                            .setNeutralButton(getString(R.string.sec_upload_anyway)) { _, _ ->
-                                startUpload(items, actualRepo, targetBranch)
-                            }
-                            .setOnDismissListener { resetSheet() }
-                            .show()
-                    }
+                    // 1.9.4: رفع بدون فحص — كل الملفات تُرفع مباشرة دون استثناء ودون توقف
+                    startUpload(items, actualRepo, targetBranch)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (t: Throwable) {

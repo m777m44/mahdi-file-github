@@ -24,10 +24,12 @@ class GitHubClient(private val token: String) {
     ) : Exception(message)
 
     companion object {
-        private const val PACE_MS = 120L
+        private const val PACE_MS = 90L
         private val RATE_LIMIT_WAITS_MS =
             longArrayOf(60_000L, 90_000L, 150_000L, 240_000L, 420_000L, 600_000L)
         private val NETWORK_BACKOFF_MS = longArrayOf(5_000L, 15_000L, 45_000L)
+        // 1.9.4: إعادة محاولة أخطاء خادم GitHub المؤقتة (5xx) قبل إعلان الفشل
+        private val SERVER_BACKOFF_MS = longArrayOf(2_000L, 5_000L, 10_000L)
 
         // عميل HTTP مشترك واحد لكل التطبيق (مجمّع اتصالات موحّد = إعادة استخدام كامل + سرعة أعلى)
         val SHARED_HTTP: OkHttpClient = OkHttpClient.Builder()
@@ -76,6 +78,7 @@ class GitHubClient(private val token: String) {
     ): Pair<Int, String> {
         var attempt = 0
         var netAttempt = 0
+        var serverAttempt = 0
         while (true) {
             pace()
             val builder = Request.Builder().url(url)
@@ -122,6 +125,15 @@ class GitHubClient(private val token: String) {
                     Thread.sleep(waitMs)
                     attempt++
                     continue
+                }
+                // 1.9.4: خطأ خادم مؤقت (500/502/503/504) — إعادة محاولة تلقائية 3 مرات
+                if (code in listOf(500, 502, 503, 504) && serverAttempt < SERVER_BACKOFF_MS.size) {
+                    Thread.sleep(SERVER_BACKOFF_MS[serverAttempt])
+                    serverAttempt++
+                    continue
+                }
+                if (code in listOf(500, 502, 503, 504)) {
+                    throw GitHubException(code, "خطأ مؤقت في خادم GitHub — جرّب بعد قليل", retryAfter)
                 }
                 throw GitHubException(code, "GitHub ($code): $msg", retryAfter)
             }

@@ -113,10 +113,6 @@
     <string name="update_install_failed">تعذر بدء التثبيت — تأكد من صلاحية تثبيت التطبيقات غير المعروفة</string>
     <string name="btn_suggest_msg">✨ اقتراح رسالة الالتزام تلقائياً</string>
 
-    <string name="sec_sensitive_title">⚠️ ملفات حساسة مُكتشفة</string>
-    <string name="sec_sensitive_msg">كشفنا %1$d ملفاً قد يحتوي مفاتيح سرّية أو بيانات دخول (توكنات، مفاتيح خاصة، ملفات .env…). رفعها إلى مستودع عام قد يكشف حسابك للخطر:\n\n%2$s</string>
-    <string name="sec_exclude">🗑 استبعادها والرفع آمن</string>
-    <string name="sec_upload_anyway">أرفعها رغم ذلك</string>
 
     <string name="btn_switch_account">🔄 تبديل الحساب المحفوظ</string>
     <string name="btn_store_account">💾 حفظ الحساب الحالي في القائمة</string>
