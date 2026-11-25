@@ -1,13 +1,79 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- شعار الأيقونة: درع دائري متدرج + سهم رفع ثلاثي الأبعاد بظل وعمق ولمعة -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp"
-    android:viewportWidth="108" android:viewportHeight="108">
-    <group android:scaleX="2.4" android:scaleY="2.4" android:translateX="24" android:translateY="24">
-        <path
-            android:fillColor="#E6EDF3"
-            android:pathData="M22,11 L22,15 A2,2 0 0,1 20,17 L4,17 A2,2 0 0,1 2,15 L2,11 L5,11 L5,14 L19,14 L19,11 Z M12,2 L17,7 L14,7 L14,12 L10,12 L10,7 L7,7 Z" />
-        <path
-            android:fillColor="#3FB950"
-            android:pathData="M12,2 L17,7 L14,7 L12,5 Z" />
-    </group>
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ظل الدرع السفلي (عمق) -->
+    <path
+        android:fillColor="#66001A33"
+        android:pathData="M26,56.5 a28,28 0 1,0 56,0 a28,28 0 1,0 -56,0 Z" />
+
+    <!-- الدرع الرئيسي: تدرج أزرق صاعد -->
+    <path android:pathData="M26,54 a28,28 0 1,0 56,0 a28,28 0 1,0 -56,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="26" android:startY="26"
+                android:endX="82" android:endY="82">
+                <item android:offset="0.0" android:color="#4C9CFF" />
+                <item android:offset="0.55" android:color="#1F6FEB" />
+                <item android:offset="1.0" android:color="#144A9E" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- حافة علوية مضيئة (لمعان زجاجي) -->
+    <path android:pathData="M32,45 a22,18 0 0,1 44,0 a26,22 0 0,1 -44,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54" android:startY="27"
+                android:endX="54" android:endY="48">
+                <item android:offset="0.0" android:color="#30FFFFFF" />
+                <item android:offset="1.0" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- حلقة داخلية رفيعة فاخرة -->
+    <path
+        android:pathData="M32.75,54 a21.25,21.25 0 1,0 42.5,0 a21.25,21.25 0 1,0 -42.5,0 Z"
+        android:strokeColor="#26FFFFFF"
+        android:strokeWidth="1.4"
+        android:fillColor="#00000000" />
+
+    <!-- السهم: ظل ساقط (3D) -->
+    <path
+        android:fillColor="#33000000"
+        android:pathData="M54,38 L67,53 H60.5 V65.5 H55.5 V53 H54 H52.5 V65.5 H47.5 V53 H41 Z M45.5,69.5 h17 a2,2 0 0 1 2,2 v1.5 a2,2 0 0 1 -2,2 h-17 a2,2 0 0 1 -2,-2 v-1.5 a2,2 0 0 1 2,-2 Z" />
+
+    <!-- السهم الرئيسي: تدرج أبيض فاخر -->
+    <path android:pathData="M54,36 L67,51 H60.5 V63.5 H55.5 V51 H54 H52.5 V63.5 H47.5 V51 H41 Z M45.5,67.5 h17 a2,2 0 0 1 2,2 v1.5 a2,2 0 0 1 -2,2 h-17 a2,2 0 0 1 -2,-2 v-1.5 a2,2 0 0 1 2,-2 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="41" android:startY="36"
+                android:endX="67" android:endY="67">
+                <item android:offset="0.0" android:color="#FFFFFF" />
+                <item android:offset="1.0" android:color="#D8E3F0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- لمسة خضراء صاعدة (GitHub Green) على رأس السهم -->
+    <path android:pathData="M54,36 L67,51 H54 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54" android:startY="36"
+                android:endX="54" android:endY="51">
+                <item android:offset="0.0" android:color="#3FB950" />
+                <item android:offset="1.0" android:color="#238636" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

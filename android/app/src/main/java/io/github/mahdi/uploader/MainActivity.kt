@@ -1332,7 +1332,27 @@ class MainActivity : AppCompatActivity() {
         }
         view.findViewById<MaterialButton>(R.id.btnAdvancedToggle).setOnClickListener { btn ->
             val box = view.findViewById<View>(R.id.advancedBox)
-            box.isVisible = !box.isVisible
+            val show = !box.isVisible
+            if (show) {
+                // ظهور ناعم: شفافية + انزلاق بسيط من الأعلى (بدون تقطيع)
+                box.alpha = 0f
+                box.translationY = -14f
+                box.isVisible = true
+                box.animate()
+                    .alpha(1f).translationY(0f)
+                    .setDuration(190L)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f))
+                    .start()
+            } else {
+                // إخفاء ناعم ثم طيّ فعلي بعد انتهاء الحركة
+                box.animate()
+                    .alpha(0f).translationY(-10f)
+                    .setDuration(150L)
+                    .setInterpolator(android.view.animation.AccelerateInterpolator(1.4f))
+                    .withEndAction { box.isVisible = false }
+                    .start()
+            }
+            haptic()
         }
         view.findViewById<MaterialButton>(R.id.btnPickUrl).setOnClickListener {
             showUrlDownloadDialog(view)

@@ -77,10 +77,10 @@
     <string name="more_files">…و %1$d ملفاً آخر</string>
     <string name="stage_errors">⚠ فشل تجهيز %1$d ملف:</string>
     <string name="repo_meta">الفرع: %1$s  •  آخر تحديث: %2$s</string>
-    <string name="advanced_options">⚙ خيارات متقدمة (اختياري)</string>
-    <string name="branch_optional_hint">الفرع — اختياري، افتراضياً يُرفع على الفرع الأساسي للمستودع</string>
-    <string name="prefix_optional_hint">مجلد داخل المستودع — اختياري، مثال: صوري أو docs</string>
-    <string name="message_optional_hint">رسالة الالتزام — اختياري</string>
+    <string name="advanced_options">خيارات متقدمة (اختياري)</string>
+    <string name="branch_optional_hint">الفرع (Branch)</string>
+    <string name="prefix_optional_hint">المجلد الفرعي داخل المستودع</string>
+    <string name="message_optional_hint">رسالة الالتزام (Commit)</string>
     <string name="empty_or_unreadable">الملف فارغ أو لا يمكن قراءته: %1$s</string>
     <string name="btn_pick_url">🌐 رفع من رابط مباشر (من الإنترنت)</string>
     <string name="url_dialog_title">رفع ملف من رابط</string>
@@ -111,7 +111,7 @@
     <string name="update_need_permission">لإكمال التثبيت اسمح بخيار «تثبيت التطبيقات غير المعروفة» لهذا التطبيق، ثم اضغط تثبيت مرة أخرى</string>
     <string name="update_download_retrying">تعذر الاتصال — جارٍ إعادة المحاولة…</string>
     <string name="update_install_failed">تعذر بدء التثبيت — تأكد من صلاحية تثبيت التطبيقات غير المعروفة</string>
-    <string name="btn_suggest_msg">✨ اقتراح رسالة تلقائية</string>
+    <string name="btn_suggest_msg">✨ اقتراح رسالة الالتزام تلقائياً</string>
 
     <string name="sec_sensitive_title">⚠️ ملفات حساسة مُكتشفة</string>
     <string name="sec_sensitive_msg">كشفنا %1$d ملفاً قد يحتوي مفاتيح سرّية أو بيانات دخول (توكنات، مفاتيح خاصة، ملفات .env…). رفعها إلى مستودع عام قد يكشف حسابك للخطر:\n\n%2$s</string>
@@ -151,6 +151,11 @@
     <string name="preview_count">%1$d ملف مختار • %2$s</string>
     <string name="all_excluded_toast">كل الملفات مستبعدة — أعد ملفاً واحداً على الأقل</string>
     <string name="excluded_note">🚫 مستبعد: %1$d ملف</string>
+    <string name="adv_title">⚙️ الخيارات المتقدمة</string>
+    <string name="adv_subtitle">كل الحقول اختيارية — اتركها فارغة وسيُعني التطبيق بالباقي بذكاء</string>
+    <string name="branch_helper">على أي فرع تُرفع الملفات — اتركه فارغاً للفرع الرئيسي</string>
+    <string name="prefix_helper">تُوضع الملفات داخل مجلد بهذا الاسم — مثال: docs أو الصور</string>
+    <string name="message_helper">وصف يُظهر مع الملفات في GitHub — أو دع التطبيق يقترحها لك</string>
     <string name="cannot_create_dir">تعذّر إنشاء مجلد التجهيز: %1$s</string>
     <string name="stage_copy_failed">فشل نسخ الملف: %1$s — %2$s</string>
 

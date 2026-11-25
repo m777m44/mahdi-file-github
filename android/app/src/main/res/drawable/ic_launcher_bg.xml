@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- خلفية الأيقونة: تدرج ليلي عميق أزرق مع توهج أخضر خفيف في المنتصف -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:pathData="M0,0 h108 v108 h-108 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0" android:startY="0"
+                android:endX="108" android:endY="108">
+                <item android:offset="0.0" android:color="#0A1626" />
+                <item android:offset="0.5" android:color="#12294A" />
+                <item android:offset="1.0" android:color="#1B4E8F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- توهج دائري خفيف خلف الشعار (عمق 3D) -->
+    <path
+        android:pathData="M54,12 a42,42 0 1,0 0.1,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="54" android:centerY="54"
+                android:gradientRadius="42">
+                <item android:offset="0.0" android:color="#29238636" />
+                <item android:offset="0.55" android:color="#12238636" />
+                <item android:offset="1.0" android:color="#00238636" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- غطاء لمعان علوي شفاف -->
+    <path android:pathData="M0,0 h108 v54 h-108 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54" android:startY="0"
+                android:endX="54" android:endY="54">
+                <item android:offset="0.0" android:color="#14FFFFFF" />
+                <item android:offset="1.0" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- أيقونة رسالة الالتزام: فقاعة كلام مع خطوط نص -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#8B949E"
+        android:pathData="M4,4 H20 A1.6,1.6 0 0,1 21.6,5.6 V15.4 A1.6,1.6 0 0,1 20,17 H13.6 L9.4,20.6 A0.8,0.8 0 0,1 8.1,20 V17 H4 A1.6,1.6 0 0,1 2.4,15.4 V5.6 A1.6,1.6 0 0,1 4,4 Z M4.4,5.9 V15.1 H9.9 V17.4 L12.9,15.1 H19.6 V5.9 Z M6.3,8 H15.5 V9.4 H6.3 Z M6.3,11.3 H13 V12.7 H6.3 Z" />
+</vector>
