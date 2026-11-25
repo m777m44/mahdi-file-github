@@ -151,5 +151,7 @@
     <string name="preview_count">%1$d ملف مختار • %2$s</string>
     <string name="all_excluded_toast">كل الملفات مستبعدة — أعد ملفاً واحداً على الأقل</string>
     <string name="excluded_note">🚫 مستبعد: %1$d ملف</string>
+    <string name="cannot_create_dir">تعذّر إنشاء مجلد التجهيز: %1$s</string>
+    <string name="stage_copy_failed">فشل نسخ الملف: %1$s — %2$s</string>
 
 </resources>

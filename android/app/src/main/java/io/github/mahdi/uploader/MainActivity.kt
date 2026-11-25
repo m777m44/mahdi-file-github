@@ -127,14 +127,35 @@ class MainActivity : AppCompatActivity() {
             target = File(dir, stem + "_" + n + "." + ext)
             n++
         }
-        val input = openReadably(uri)
-        input.use { stream -> target.outputStream().use { output -> stream.copyTo(output) } }
+        // إنشاء كل المجلدات الوسيطة قبل الكتابة (سبب خطأ ENOENT مع المجلدات الفرعية)
+        target.parentFile?.let { parent ->
+            if (!parent.exists() && !parent.mkdirs() && !parent.isDirectory) {
+                throw Exception(getString(R.string.cannot_create_dir, parent.name))
+            }
+        }
+        for (mkAttempt in 0 until 3) {
+            val input = openReadably(uri)
+            try {
+                input.use { stream ->
+                    target.outputStream().use { output -> stream.copyTo(output) }
+                }
+                break
+            } catch (e: java.io.IOException) {
+                if (mkAttempt == 2) throw Exception(
+                    getString(R.string.stage_copy_failed, relPath, e.message ?: "")
+                )
+                // قد يكون الملف تالفً مؤقتاً — إعادة محاولة بعد مهلة قصيرة
+                try { target.delete() } catch (_: Exception) {}
+                Thread.sleep(600L * (mkAttempt + 1))
+            }
+        }
         if (target.length() == 0L) {
             target.delete()
             throw Exception(getString(R.string.empty_or_unreadable, relPath))
         }
         return target
     }
+
 
     /** Tries several reading strategies with retries: a plain stream, a file
         descriptor, and (last resort) the raw path reported by the provider,
