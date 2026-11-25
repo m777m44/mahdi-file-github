@@ -23,21 +23,24 @@ class GitHubClient(private val token: String) {
         val retryAfterSeconds: Long? = null,
     ) : Exception(message)
 
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(300, TimeUnit.SECONDS)
-        .writeTimeout(300, TimeUnit.SECONDS)
-        .callTimeout(0, TimeUnit.SECONDS)
-        .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
-        .retryOnConnectionFailure(true)
-        .build()
-
     companion object {
-        private const val PACE_MS = 200L
+        private const val PACE_MS = 120L
         private val RATE_LIMIT_WAITS_MS =
             longArrayOf(60_000L, 90_000L, 150_000L, 240_000L, 420_000L, 600_000L)
         private val NETWORK_BACKOFF_MS = longArrayOf(5_000L, 15_000L, 45_000L)
+
+        // عميل HTTP مشترك واحد لكل التطبيق (مجمّع اتصالات موحّد = إعادة استخدام كامل + سرعة أعلى)
+        val SHARED_HTTP: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(300, TimeUnit.SECONDS)
+            .writeTimeout(300, TimeUnit.SECONDS)
+            .callTimeout(0, TimeUnit.SECONDS)
+            .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
+            .retryOnConnectionFailure(true)
+            .build()
     }
+
+    private val http = SHARED_HTTP
 
     private val paceLock = Any()
     private var lastCallAt = 0L

@@ -93,6 +93,8 @@ class MainActivity : AppCompatActivity() {
     private var pendingDocs = mutableListOf<Pending>()
     private var zipAsIs = false
     private var pickErrors = mutableListOf<Pair<String, String>>()
+    private var repoSortNewest = true
+    private val excludedDocs = mutableSetOf<String>()
 
     private fun newStagingDir(): File {
         stagingDir?.deleteRecursively()
@@ -319,6 +321,7 @@ class MainActivity : AppCompatActivity() {
 
         bindViews()
         setupListeners()
+        wireSortButton()
 
         val token = Store.token(this)
         if (token.isNotEmpty()) {
@@ -654,7 +657,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ------------------------------------------------------------ فحص التحديث عند العودة
+
+    override fun onResume() {
+        super.onResume()
+        if (api != null) maybeCheckUpdateOnResume()
+    }
+
+    private fun maybeCheckUpdateOnResume() {
+        try {
+            val prefs = getSharedPreferences("uploader_ui", MODE_PRIVATE)
+            val last = prefs.getLong("last_resume_update_check", 0L)
+            val now = System.currentTimeMillis()
+            if (now - last < 30 * 60 * 1000L) return
+            prefs.edit().putLong("last_resume_update_check", now).apply()
+            checkForUpdate()
+        } catch (_: Exception) {
+        }
+    }
+
     // ------------------------------------------------------------ repos
+
+    private fun sortRepos() {
+        repos = if (repoSortNewest) {
+            repos.sortedByDescending { it.optString("updated_at") }.toMutableList()
+        } else {
+            repos.sortedBy { it.optString("full_name").lowercase(Locale.US) }.toMutableList()
+        }
+    }
 
     private fun loadRepos() {
         val client = api ?: return
@@ -663,7 +693,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 val result = client.listRepos()
                 repos = (0 until result.length()).map { result.getJSONObject(it) }.toMutableList()
-                repos.sortByDescending { it.optString("updated_at") }
+                sortRepos()
                 setupAdapter()
             } catch (e: CancellationException) {
                 throw e
@@ -784,10 +814,7 @@ class MainActivity : AppCompatActivity() {
 
         scope.launch(Dispatchers.IO) {
             try {
-                val http = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
-                    .build()
+                val http = GitHubClient.SHARED_HTTP
                 val request = okhttp3.Request.Builder().url(url).build()
                 http.newCall(request).execute().use { resp ->
                     if (!resp.isSuccessful) {
@@ -863,6 +890,89 @@ class MainActivity : AppCompatActivity() {
             pendingDocs.any { it.kind == Kind.ZIP }
     }
 
+    // ------------------------------------------------------------ فرز المستودعات
+
+    private fun wireSortButton() {
+        val btn = findViewById<MaterialButton>(R.id.btnSortRepos) ?: return
+        val prefs = getSharedPreferences("uploader_ui", MODE_PRIVATE)
+        repoSortNewest = prefs.getBoolean("repo_sort_newest", true)
+        btn.text = getString(if (repoSortNewest) R.string.sort_newest else R.string.sort_az)
+        btn.setOnClickListener {
+            repoSortNewest = !repoSortNewest
+            prefs.edit().putBoolean("repo_sort_newest", repoSortNewest).apply()
+            btn.text = getString(if (repoSortNewest) R.string.sort_newest else R.string.sort_az)
+            sortRepos()
+            setupAdapter()
+            haptic()
+        }
+    }
+
+    // ------------------------------------------------------------ معاينة الملفات قبل الرفع
+
+    private fun docKey(doc: Pending): String = doc.stagedFile.absolutePath + "\u0001" + doc.relPath
+
+    private fun showFilesPreviewDialog() {
+        if (pendingDocs.isEmpty()) return
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_files_preview, null)
+        val list = view.findViewById<RecyclerView>(R.id.previewList)
+        val counter = view.findViewById<TextView>(R.id.previewCounter)
+
+        fun updateCounter() {
+            val active = pendingDocs.count { docKey(it) !in excludedDocs }
+            val bytes = pendingDocs.filter { docKey(it) !in excludedDocs }.sumOf { it.size }
+            counter.text = getString(R.string.preview_count, active,
+                Formatter.formatShortFileSize(this, bytes))
+        }
+
+        val previewAdapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val v = LayoutInflater.from(this@MainActivity)
+                    .inflate(R.layout.item_preview_file, parent, false)
+                return object : RecyclerView.ViewHolder(v) {}
+            }
+
+            override fun getItemCount(): Int = pendingDocs.size
+
+            override fun onBindViewHolder(h: RecyclerView.ViewHolder, position: Int) {
+                val doc = pendingDocs[position]
+                val key = docKey(doc)
+                val name = h.itemView.findViewById<TextView>(R.id.previewName)
+                val size = h.itemView.findViewById<TextView>(R.id.previewSize)
+                val toggle = h.itemView.findViewById<TextView>(R.id.previewToggle)
+                val excluded = key in excludedDocs
+                name.text = doc.relPath
+                name.paintFlags = if (excluded)
+                    name.paintFlags or android.graphics.Paint.STRIKE_THRU_TEXT_FLAG
+                else
+                    name.paintFlags and android.graphics.Paint.STRIKE_THRU_TEXT_FLAG.inv()
+                name.alpha = if (excluded) 0.45f else 1f
+                size.text = Formatter.formatShortFileSize(this@MainActivity, doc.size)
+                if (excluded) {
+                    toggle.text = "\u21ba"
+                    toggle.setTextColor(getColor(R.color.accent_bright))
+                } else {
+                    toggle.text = "\u2716"
+                    toggle.setTextColor(getColor(R.color.error))
+                }
+                h.itemView.setOnClickListener {
+                    if (key in excludedDocs) excludedDocs.remove(key) else excludedDocs.add(key)
+                    notifyItemChanged(position)
+                    updateCounter()
+                    refreshPickedSummary()
+                    haptic()
+                }
+            }
+        }
+        list.layoutManager = LinearLayoutManager(this)
+        list.adapter = previewAdapter
+        updateCounter()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.preview_title))
+            .setView(view)
+            .setNegativeButton(getString(R.string.close), null)
+            .show()
+    }
+
     // ------------------------------------------------------------ in-app update
 
     private val UPDATE_REPO = "m777m44/mahdi-file-github"
@@ -872,6 +982,11 @@ class MainActivity : AppCompatActivity() {
     private var downloadedApk: File? = null
 
     private fun checkForUpdate() {
+        try {
+            getSharedPreferences("uploader_ui", MODE_PRIVATE)
+                .edit().putLong("last_resume_update_check", System.currentTimeMillis()).apply()
+        } catch (_: Exception) {
+        }
         val client = api ?: GitHubClient("")
         scope.launch {
             val info = try {
@@ -1032,10 +1147,7 @@ class MainActivity : AppCompatActivity() {
             var attempt = 0
             while (true) {
                 try {
-                    val http = okhttp3.OkHttpClient.Builder()
-                        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                        .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
+                    val http = GitHubClient.SHARED_HTTP
                     http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { resp ->
                         if (!resp.isSuccessful) {
                             throw Exception(resp.code.toString())
@@ -1123,6 +1235,10 @@ class MainActivity : AppCompatActivity() {
     private fun refreshPickedSummary() {
         val sheet = uploadSheet ?: return
         val summary = sheet.findViewById<TextView>(R.id.pickedSummary) ?: return
+        val keys = pendingDocs.map { docKey(it) }.toSet()
+        excludedDocs.retainAll(keys)
+        // إعادة بناء: عند إفراغ القائمة تُحذف كل الاستبعدات
+        if (pendingDocs.isEmpty()) excludedDocs.clear()
         val sb = StringBuilder()
         if (pendingDocs.isEmpty()) {
             sb.append(getString(R.string.nothing_picked))
@@ -1141,12 +1257,16 @@ class MainActivity : AppCompatActivity() {
             if (pendingDocs.size > 15) {
                 sb.append(getString(R.string.more_files, pendingDocs.size - 15)).append('\n')
             }
+            if (excludedDocs.isNotEmpty()) {
+                sb.append(getString(R.string.excluded_note, excludedDocs.size)).append('\n')
+            }
         }
         if (pickErrors.isNotEmpty()) {
             sb.append('\n').append(getString(R.string.stage_errors, pickErrors.size)).append('\n')
             pickErrors.forEach { (name, err) -> sb.append("⚠ ").append(name).append(": ").append(err).append('\n') }
             sb.append(getString(R.string.stage_retry_hint)).append('\n')
         }
+        sheet.findViewById<MaterialButton>(R.id.btnPreviewFiles)?.isVisible = pendingDocs.isNotEmpty()
         summary.text = sb.toString()
     }
 
@@ -1200,6 +1320,13 @@ class MainActivity : AppCompatActivity() {
             zipAsIs = view.findViewById<RadioButton>(R.id.zipAsIs).isChecked
         }
 
+        view.findViewById<MaterialButton>(R.id.btnPreviewFiles).setOnClickListener {
+            if (pendingDocs.isEmpty()) {
+                Toast.makeText(this, getString(R.string.pick_files_first), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            showFilesPreviewDialog()
+        }
         view.findViewById<MaterialButton>(R.id.btnSuggestMsg).setOnClickListener {
             val paths = pendingDocs.map { it.relPath }
             if (messageInput.text.isNullOrBlank()) {
@@ -1221,7 +1348,11 @@ class MainActivity : AppCompatActivity() {
             val branch = branchInput.text.toString().trim()
             val prefix = UploadEngine.cleanPath(prefixInput.text.toString().trim())
             val message = messageInput.text.toString().trim()
-            val snapshot = pendingDocs.toList()
+            val snapshot = pendingDocs.filter { docKey(it) !in excludedDocs }
+            if (snapshot.isEmpty()) {
+                Toast.makeText(this, getString(R.string.all_excluded_toast), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
 
             uploadBtn.isEnabled = false
             allInputs.forEach { it.isEnabled = false }
@@ -1244,13 +1375,16 @@ class MainActivity : AppCompatActivity() {
                         val startAt = System.currentTimeMillis()
                         val result = UploadEngine.upload(
                             client, repoFull, targetBranch, items, message,
-                        ) { done, total, current ->
-                            val elapsedSec = ((System.currentTimeMillis() - startAt) / 1000).toInt()
+                        ) { done, total, current, bytesDone ->
+                            val elapsedMs = System.currentTimeMillis() - startAt
+                            val elapsedSec = (elapsedMs / 1000).toInt()
                             val mm = (elapsedSec / 60).toString().padStart(2, '0')
                             val ss = (elapsedSec % 60).toString().padStart(2, '0')
+                            val speed = if (elapsedMs >= 700) bytesDone / (elapsedMs / 1000.0) / (1024.0 * 1024.0) else 0.0
+                            val speedTxt = if (speed >= 0.1) String.format(Locale.US, " \u2022 %.1f MB/s", speed) else ""
                             scope.launch {
                                 progress.progress = (done * 100 / total.coerceAtLeast(1))
-                                progressLabel.text = getString(R.string.upload_progress_count, done, total, "$mm:$ss") + "\n" + current
+                                progressLabel.text = getString(R.string.upload_progress_count, done, total, "$mm:$ss") + speedTxt + "\n" + current
                             }
                         }
 

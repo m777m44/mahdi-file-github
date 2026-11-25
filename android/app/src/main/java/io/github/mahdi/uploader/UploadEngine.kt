@@ -15,7 +15,7 @@ object UploadEngine {
 
     const val HARD_LIMIT = 100L * 1024 * 1024      // GitHub hard limit per file
     private const val SAFE_LIMIT = 90L * 1024 * 1024
-    private const val BLOB_CONCURRENCY = 2
+    private const val BLOB_CONCURRENCY = 4
     private const val COMMIT_PAUSE_MS = 1_000L
     private const val RATE_LIMIT_COOLDOWN_MS = 60_000L
     private const val FINAL_RETRY_PASSES = 2
@@ -152,7 +152,7 @@ object UploadEngine {
         branch: String,
         inputItems: List<Item>,
         message: String,
-        onProgress: (done: Int, total: Int, current: String) -> Unit,
+        onProgress: (done: Int, total: Int, current: String, bytesDone: Long) -> Unit,
     ): Result = withContext(Dispatchers.IO) {
         val big = inputItems.filter { it.size > SAFE_LIMIT }
 
@@ -210,13 +210,15 @@ object UploadEngine {
 
         val total = inputItems.size
         var processed = 0
+        var bytesDone = 0L
 
         suspend fun flush(current: List<Item>) {
             if (current.isEmpty()) return
             val entries = createBlobs(api, repoFullName, current)
             for (entry in entries) {
                 processed++
-                onProgress(processed, total, entry.item.path)
+                if (entry.sha != null) bytesDone += entry.item.size
+                onProgress(processed, total, entry.item.path, bytesDone)
             }
             commitBatch(entries)
             for (entry in entries) {
@@ -250,7 +252,7 @@ object UploadEngine {
             pass++
             val pending = retryQueue.toList()
             retryQueue.clear()
-            onProgress(processed, total, "⟳ تهوئة قبل إعادة محاولة ${pending.size} ملف…")
+            onProgress(processed, total, "⟳ تهوئة قبل إعادة محاولة ${pending.size} ملف…", bytesDone)
             delay(RATE_LIMIT_COOLDOWN_MS)
 
             val outcomes = mutableListOf<BlobOutcome>()
@@ -267,8 +269,10 @@ object UploadEngine {
             val retried = outcomes.filter { it.sha != null }
             if (retried.isNotEmpty()) {
                 commitBatch(retried)
+                bytesDone += retried.sumOf { it.item.size }
                 val okPaths = retried.map { it.item.path }.toSet()
                 failed.removeAll { it.first in okPaths }
+                onProgress(processed, total, "⟳ تم إجازة ${retried.size} ملف", bytesDone)
             }
             for (entry in outcomes) {
                 if (entry.sha == null) {

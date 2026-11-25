@@ -143,4 +143,13 @@
     <string name="share_app">📤 مشاركة التطبيق مع أصدقائك</string>
     <string name="share_text">⭐ حمّل تطبيق MAHDI FILE GITHUB — ارفع أي ملفات أو مجلدات إلى حساب GitHub من هاتفك مباشرة:\n%1$s</string>
     <string name="update_auto_installing">جارٍ فتح مثبِّت النظام… اضغط «تثبيت» في النافذة المنبثقة</string>
+    <string name="sort_newest">⇅ الأحدث</string>
+    <string name="sort_az">⇅ أبجدي (أ→ي)</string>
+    <string name="preview_btn">👁 معاينة وتعديل الملفات</string>
+    <string name="preview_title">معاينة الملفات المختارة</string>
+    <string name="preview_hint">انقر على ملف لاستبعاده • اضغط ↺ لإعادته</string>
+    <string name="preview_count">%1$d ملف مختار • %2$s</string>
+    <string name="all_excluded_toast">كل الملفات مستبعدة — أعد ملفاً واحداً على الأقل</string>
+    <string name="excluded_note">🚫 مستبعد: %1$d ملف</string>
+
 </resources>
