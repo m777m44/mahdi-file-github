@@ -111,6 +111,7 @@
     <string name="update_need_permission">لإكمال التثبيت اسمح بخيار «تثبيت التطبيقات غير المعروفة» لهذا التطبيق، ثم اضغط تثبيت مرة أخرى</string>
     <string name="update_download_retrying">تعذر الاتصال — جارٍ إعادة المحاولة…</string>
     <string name="update_install_failed">تعذر بدء التثبيت — تأكد من صلاحية تثبيت التطبيقات غير المعروفة</string>
+    <string name="btn_suggest_short">اقتراح ✨</string>
     <string name="btn_suggest_msg">✨ اقتراح رسالة الالتزام تلقائياً</string>
 
 
@@ -183,6 +184,9 @@
     <string name="delete_failed">فشل الحذف:</string>
 
     <!-- 1.10 — المشاركة السريعة (من سكربت raf3ly) -->
+    <string name="share_short_btn">⚡ مشاركة — رابط مباشر</string>
+    <string name="share_top_hint">ارفع برابط مباشر وبدون تسجيل دخول — أو عبر GitHub بخيارات الرفع أدناه</string>
+    <string name="share_login_btn">⚡ مشاركة سريعة برابط مباشر — بدون تسجيل دخول</string>
     <string name="share_title">⚡ مشاركة سريعة برابط مباشر</string>
     <string name="share_subtitle">ارفع أي ملف إلى منصة مشاركة واحصل على رابط مباشر فوراً — منقول من سكربت raf3ly</string>
     <string name="share_pick_files">اختر الملفات (يمكن أكثر من ملف)</string>

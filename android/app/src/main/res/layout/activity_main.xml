@@ -48,6 +48,22 @@
                 android:textSize="14sp" />
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnQuickShareLogin"
+                android:layout_width="match_parent"
+                android:layout_height="54dp"
+                android:layout_marginTop="20dp"
+                android:background="@drawable/bg_share_grad"
+                android:text="@string/share_login_btn"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                app:backgroundTint="@null"
+                app:icon="@drawable/ic_qshare"
+                app:iconGravity="textStart"
+                app:iconTint="#FFFFFF"
+                app:rippleColor="#40FFFFFF" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnLoginGitHub"
                 android:layout_width="match_parent"
                 android:layout_height="60dp"

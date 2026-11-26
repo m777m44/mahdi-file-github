@@ -388,6 +388,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         btnLoginGitHub.setOnClickListener { startDeviceFlow() }
+        findViewById<MaterialButton>(R.id.btnQuickShareLogin).setOnClickListener { btn ->
+            haptic()
+            btn.animate().scaleX(0.95f).scaleY(0.95f).setDuration(70L)
+                .withEndAction {
+                    btn.animate().scaleX(1f).scaleY(1f).setDuration(130L)
+                        .setInterpolator(android.view.animation.OvershootInterpolator(2.2f)).start()
+                }.start()
+            showShareSheet()
+        }
         btnOpenBrowser.setOnClickListener {
             val url = btnOpenBrowser.tag as? String
             if (url != null) startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
@@ -1723,6 +1732,12 @@ class MainActivity : AppCompatActivity() {
         }
         view.findViewById<MaterialButton>(R.id.btnQuickShare).setOnClickListener { btn ->
             haptic()
+            // نبضة نقر أنيقة: انكماش سريع ثم ارتداد للخارج
+            btn.animate().scaleX(0.92f).scaleY(0.92f).setDuration(70L)
+                .withEndAction {
+                    btn.animate().scaleX(1f).scaleY(1f).setDuration(130L)
+                        .setInterpolator(android.view.animation.OvershootInterpolator(2.2f)).start()
+                }.start()
             showShareSheet()
         }
         view.findViewById<MaterialButton>(R.id.btnAdvancedToggle).setOnClickListener { btn ->

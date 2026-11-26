@@ -20,14 +20,49 @@
             android:layout_gravity="center"
             android:background="@drawable/bg_input" />
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/upload_title"
+                android:textColor="@color/text"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnQuickShare"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:background="@drawable/bg_share_grad"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="@string/share_short_btn"
+                android:textColor="#FFFFFF"
+                android:textSize="13.5sp"
+                android:textStyle="bold"
+                app:backgroundTint="@null"
+                app:icon="@drawable/ic_qshare"
+                app:iconGravity="textStart"
+                app:iconTint="#FFFFFF"
+                app:rippleColor="#40FFFFFF" />
+        </LinearLayout>
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:text="@string/upload_title"
-            android:textColor="@color/text"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:layout_marginTop="4dp"
+            android:text="@string/share_top_hint"
+            android:textColor="@color/muted"
+            android:textSize="11.5sp" />
 
         <com.google.android.material.textfield.TextInputLayout
             style="@style/Widget.Material3.TextInputLayout.FilledBox"
@@ -85,17 +120,7 @@
             android:textColor="@color/link"
             android:textSize="15sp" />
 
-        <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnQuickShare"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:layout_marginTop="8dp"
-        android:text="@string/share_title"
-        android:textSize="14sp"
-        app:icon="@drawable/ic_bolt_share"
-        app:iconTint="?attr/colorPrimary"
-        app:iconGravity="textStart" />
+        
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnAdvancedToggle"
@@ -123,7 +148,7 @@
             android:paddingBottom="14dp"
             android:visibility="gone">
 
-            <!-- عنوان القسم مع شارة متدرجة -->
+            <!-- شارة + عنوان القسم -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -144,6 +169,13 @@
                     android:textColor="@color/text"
                     android:textSize="15sp"
                     android:textStyle="bold" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:background="@color/line" />
             </LinearLayout>
 
             <TextView
@@ -155,41 +187,12 @@
                 android:textColor="@color/muted"
                 android:textSize="12sp" />
 
-            <!-- الفرع -->
+            <!-- 1) المجلد الفرعي — يحدد مكان الرفع داخل المستودع -->
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.Material3.TextInputLayout.FilledBox"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:boxBackgroundColor="@color/background"
-                app:boxStrokeColor="@color/accent"
-                app:hintTextColor="@color/muted"
-                app:startIconDrawable="@drawable/ic_branch">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/uploadBranchInput"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="@string/branch_optional_hint"
-                    android:inputType="text"
-                    android:maxLines="1"
-                    android:textColor="@color/text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="@string/branch_helper"
-                android:textColor="@color/muted"
-                android:textSize="11sp" />
-
-            <!-- المجلد الفرعي -->
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.Material3.TextInputLayout.FilledBox"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
                 app:boxBackgroundColor="@color/background"
                 app:boxStrokeColor="@color/accent"
                 app:hintTextColor="@color/muted"
@@ -213,7 +216,14 @@
                 android:textColor="@color/muted"
                 android:textSize="11sp" />
 
-            <!-- رسالة الالتزام -->
+            <!-- فاصل أنيق -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="12dp"
+                android:background="@color/line" />
+
+            <!-- 2) الفرع -->
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.Material3.TextInputLayout.FilledBox"
                 android:layout_width="match_parent"
@@ -222,13 +232,13 @@
                 app:boxBackgroundColor="@color/background"
                 app:boxStrokeColor="@color/accent"
                 app:hintTextColor="@color/muted"
-                app:startIconDrawable="@drawable/ic_msg">
+                app:startIconDrawable="@drawable/ic_branch">
 
                 <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/uploadMessageInput"
+                    android:id="@+id/uploadBranchInput"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="@string/message_optional_hint"
+                    android:hint="@string/branch_optional_hint"
                     android:inputType="text"
                     android:maxLines="1"
                     android:textColor="@color/text" />
@@ -238,18 +248,69 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:text="@string/message_helper"
+                android:text="@string/branch_helper"
                 android:textColor="@color/muted"
                 android:textSize="11sp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnSuggestMsg"
-                style="@style/Widget.Material3.Button.TonalButton"
+            <!-- فاصل أنيق -->
+            <View
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="1dp"
                 android:layout_marginTop="12dp"
-                android:text="@string/btn_suggest_msg"
-                android:textSize="14sp" />
+                android:background="@color/line" />
+
+            <!-- 3) رسالة الالتزام + زر الاقتراح جنباً إلى جنب -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.Material3.TextInputLayout.FilledBox"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    app:boxBackgroundColor="@color/background"
+                    app:boxStrokeColor="@color/accent"
+                    app:hintTextColor="@color/muted"
+                    app:startIconDrawable="@drawable/ic_msg">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/uploadMessageInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="@string/message_optional_hint"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:textColor="@color/text" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSuggestMsg"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="56dp"
+                    android:layout_marginStart="8dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:text="@string/btn_suggest_short"
+                    android:textSize="13sp"
+                    app:backgroundTint="@color/accent"
+                    app:icon="@drawable/ic_qshare"
+                    app:iconGravity="textStart" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="@string/message_helper"
+                android:textColor="@color/muted"
+                android:textSize="11sp" />
         </LinearLayout>
 
         <LinearLayout

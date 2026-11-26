@@ -11,8 +11,8 @@ android {
         applicationId = "io.github.mahdi.uploader"
         minSdk = 26
         targetSdk = 34
-        versionCode = 14
-        versionName = "1.10.0"
+        versionCode = 15
+        versionName = "1.10.1"
     }
 
     signingConfigs {
