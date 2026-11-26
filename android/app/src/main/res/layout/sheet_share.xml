@@ -96,14 +96,14 @@
             app:icon="@drawable/ic_bolt_share"
             app:iconGravity="textStart" />
 
-        <ProgressBar
+        <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/shareProgress"
-            style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
             android:max="100"
-            android:progressTint="?attr/colorPrimary"
+            app:trackCornerRadius="4dp"
+            app:indicatorColor="@color/accent"
             android:visibility="gone" />
 
         <TextView
