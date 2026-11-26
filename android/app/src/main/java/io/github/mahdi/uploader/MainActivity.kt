@@ -95,6 +95,7 @@ class MainActivity : AppCompatActivity() {
     private var pickErrors = mutableListOf<Pair<String, String>>()
     private var repoSortNewest = true
     private val excludedDocs = mutableSetOf<String>()
+    private val shareFiles = mutableListOf<Pending>()
 
     private fun newStagingDir(): File {
         stagingDir?.deleteRecursively()
@@ -277,6 +278,16 @@ class MainActivity : AppCompatActivity() {
             pickErrors = errors
             refreshPickedSummary()
         }
+    }
+
+    // 1.10: مُطلِق اختيار ملفات المشاركة السريعة — مسجَّل مرة واحدة على مستوى النشاط
+    private var sharePickCb: ((List<Uri>) -> Unit)? = null
+
+    private val sharePick = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        val cb = sharePickCb
+        if (cb != null && uris != null) cb(uris)
     }
 
     private val pickZip = registerForActivityResult(
@@ -731,7 +742,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupAdapter() {
         if (adapter == null) {
-            adapter = RepoAdapter(repos) { repo -> openUploadSheet(repo) }
+            adapter = RepoAdapter(repos, { repo -> openUploadSheet(repo) }) { repo ->
+                haptic(true)
+                showManageSheet(repo)
+            }
             reposList.layoutManager = LinearLayoutManager(this)
             reposList.adapter = adapter
         } else {
@@ -1291,6 +1305,383 @@ class MainActivity : AppCompatActivity() {
         summary.text = sb.toString()
     }
 
+    // ------------------------------------------------------------ إدارة المستودع (1.10)
+
+    /** لوحة إدارة المستودع — تُفتح بضغطة طويلة على أي مستودع */
+    private fun showManageSheet(repo: org.json.JSONObject) {
+        val fullName = repo.optString("full_name")
+        if (fullName.isEmpty()) return
+        val view = LayoutInflater.from(this).inflate(R.layout.sheet_manager, null)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(view)
+
+        view.findViewById<TextView>(R.id.managerRepoName).text =
+            getString(R.string.manager_title) + " \u2014 " + fullName
+
+        view.findViewById<MaterialButton>(R.id.btnBrowseFiles).setOnClickListener {
+            haptic()
+            dialog.dismiss()
+            showBrowserSheet(repo)
+        }
+
+        view.findViewById<MaterialButton>(R.id.btnDeleteRepo).setOnClickListener {
+            haptic(true)
+            dialog.dismiss()
+            MaterialAlertDialogBuilder(this)
+                .setTitle(getString(R.string.delete_repo_confirm_title))
+                .setMessage(getString(R.string.delete_repo_confirm_msg, fullName))
+                .setPositiveButton(getString(R.string.delete_repo_confirm_btn)) { _, _ ->
+                    val client = api ?: return@setPositiveButton
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) { client.deleteRepo(fullName) }
+                            Toast.makeText(this@MainActivity,
+                                getString(R.string.delete_repo_done, fullName),
+                                Toast.LENGTH_LONG).show()
+                            loadRepos()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            MaterialAlertDialogBuilder(this@MainActivity)
+                                .setTitle(getString(R.string.delete_failed))
+                                .setMessage(e.message ?: e.javaClass.simpleName)
+                                .setPositiveButton(getString(R.string.close), null)
+                                .show()
+                        }
+                    }
+                }
+                .setNegativeButton(getString(R.string.close), null)
+                .show()
+        }
+
+        dialog.show()
+    }
+
+    /** متصفح ملفات المستودع — تحديد فردي أو مجلدات كاملة ثم حذف في التزام واحد */
+    private class TreeEntry(val path: String, val isDir: Boolean, val size: Long)
+
+    private fun showBrowserSheet(repo: org.json.JSONObject) {
+        val fullName = repo.optString("full_name")
+        val client = api ?: return
+        val branch = repo.optString("default_branch").ifEmpty { "main" }
+
+        val view = LayoutInflater.from(this).inflate(R.layout.sheet_browser, null)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(view)
+
+        val rowsBox = view.findViewById<android.view.ViewGroup>(R.id.browserRows)
+        val scroll = view.findViewById<android.widget.ScrollView>(R.id.browserScroll)
+        val progress = view.findViewById<ProgressBar>(R.id.browserProgress)
+        val counter = view.findViewById<TextView>(R.id.browserCounter)
+        val deleteBtn = view.findViewById<MaterialButton>(R.id.btnDeleteSelected)
+        val selectAllBtn = view.findViewById<MaterialButton>(R.id.btnSelectAll)
+
+        view.findViewById<TextView>(R.id.browserTitle).text =
+            getString(R.string.browser_title) + " \u2014 " + fullName
+
+        progress.isVisible = true
+        counter.text = getString(R.string.browser_loading)
+
+        val entries = mutableListOf<TreeEntry>()
+        val selected = mutableSetOf<String>()
+        var rowSyncs = mutableListOf<() -> Unit>()
+
+        fun refreshCounter() {
+            deleteBtn.text = getString(R.string.browser_delete_selected, selected.size)
+            deleteBtn.isEnabled = selected.isNotEmpty()
+            counter.text = if (selected.isEmpty())
+                getString(R.string.browser_none_selected, entries.count { !it.isDir }.toString())
+            else getString(R.string.browser_selected, selected.size)
+        }
+
+        suspend fun buildRows() = withContext(Dispatchers.Main) {
+            for (entry in entries.sortedWith(
+                compareBy({ !it.isDir }, { it.path.lowercase(Locale.ROOT) })
+            )) {
+                val row = LayoutInflater.from(this@MainActivity)
+                    .inflate(R.layout.item_browser_row, rowsBox, false)
+                val icon = row.findViewById<TextView>(R.id.rowIcon)
+                val pathv = row.findViewById<TextView>(R.id.rowPath)
+                val meta = row.findViewById<TextView>(R.id.rowMeta)
+                val check = row.findViewById<android.widget.CheckBox>(R.id.rowCheck)
+
+                fun childFiles(folder: TreeEntry): List<String> =
+                    entries.filter { !it.isDir && it.path.startsWith(folder.path + "/") }
+                        .map { it.path }
+
+                fun toggle() {
+                    haptic()
+                    if (entry.isDir) {
+                        val ch = childFiles(entry)
+                        val all = ch.isNotEmpty() && ch.all { it in selected }
+                        if (all) selected.removeAll(ch.toSet()) else selected.addAll(ch)
+                    } else {
+                        if (entry.path in selected) selected.remove(entry.path)
+                        else selected.add(entry.path)
+                    }
+                    for (sync in rowSyncs) sync()
+                    refreshCounter()
+                }
+
+                fun syncState() {
+                    if (entry.isDir) {
+                        val ch = childFiles(entry)
+                        val all = ch.isNotEmpty() && ch.all { it in selected }
+                        val some = ch.any { it in selected }
+                        check.isChecked = all
+                        check.alpha = if (!all && some) 0.7f else 1f
+                    } else {
+                        check.isChecked = entry.path in selected
+                    }
+                }
+                rowSyncs.add(::syncState)
+
+                icon.text = if (entry.isDir) "\ud83d\udcc1" else "\ud83d\udcc4"
+                pathv.text = if (entry.isDir) entry.path
+                else entry.path.substringBeforeLast('/') + "/ \u200e" + entry.path.substringAfterLast('/')
+                meta.text = if (entry.isDir)
+                    getString(R.string.repo_meta_num,
+                        entries.count { !it.isDir && it.path.startsWith(entry.path + "/") })
+                else Formatter.formatShortFileSize(this@MainActivity, entry.size)
+
+                row.setOnClickListener { toggle() }
+                check.setOnClickListener { toggle() }
+                rowsBox.addView(row)
+            }
+        }
+
+        scope.launch {
+            try {
+                val tree = withContext(Dispatchers.IO) { client.listTree(fullName, branch) }
+                for (i in 0 until tree.length()) {
+                    val o = tree.getJSONObject(i)
+                    val type = o.optString("type")
+                    val path = o.optString("path")
+                    if (path.isEmpty()) continue
+                    if (type == "tree") entries.add(TreeEntry(path, true, 0))
+                    else if (type == "blob") entries.add(TreeEntry(path, false, o.optLong("size")))
+                }
+                withContext(Dispatchers.Main) {
+                    progress.isVisible = false
+                    if (entries.isEmpty()) {
+                        counter.text = getString(R.string.browser_empty)
+                        return@withContext
+                    }
+                    scroll.isVisible = true
+                    counter.isVisible = true
+                    selectAllBtn.isVisible = true
+                    buildRows()
+                    refreshCounter()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    counter.text = getString(R.string.load_failed, e.message ?: "")
+                    progress.isVisible = false
+                }
+            }
+        }
+
+        selectAllBtn.setOnClickListener {
+            haptic()
+            val allFiles = entries.filter { !it.isDir }.map { it.path }
+            if (selected.containsAll(allFiles)) selected.clear() else selected.addAll(allFiles)
+            for (sync in rowSyncs) sync()
+            refreshCounter()
+        }
+
+        deleteBtn.setOnClickListener {
+            haptic(true)
+            if (selected.isEmpty()) return@setOnClickListener
+            val count = selected.size
+            MaterialAlertDialogBuilder(this)
+                .setTitle(getString(R.string.browser_confirm_title))
+                .setMessage(getString(R.string.browser_confirm_msg, count, fullName))
+                .setPositiveButton(getString(R.string.delete_repo_confirm_btn)) { _, _ ->
+                    val paths = selected.toList()
+                    val c = api ?: return@setPositiveButton
+                    deleteBtn.isEnabled = false
+                    progress.isVisible = true
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                c.deletePathsRobust(fullName, branch, paths)
+                            }
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@MainActivity,
+                                    getString(R.string.browser_deleted, paths.size),
+                                    Toast.LENGTH_LONG).show()
+                            }
+                            dialog.dismiss()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                MaterialAlertDialogBuilder(this@MainActivity)
+                                    .setTitle(getString(R.string.delete_failed))
+                                    .setMessage(e.message ?: e.javaClass.simpleName)
+                                    .setPositiveButton(getString(R.string.close), null)
+                                    .show()
+                                progress.isVisible = false
+                                deleteBtn.isEnabled = true
+                            }
+                        }
+                    }
+                }
+                .setNegativeButton(getString(R.string.close), null)
+                .show()
+        }
+
+        dialog.show()
+    }
+
+    // ------------------------------------------------------------ مشاركة سريعة (1.10 — من سكربت raf3ly)
+
+    private var shareJob: kotlinx.coroutines.Job? = null
+
+    private fun showShareSheet() {
+        newStagingDir()
+        val view = LayoutInflater.from(this).inflate(R.layout.sheet_share, null)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(view)
+
+        val hostSpinner = view.findViewById<com.google.android.material.textfield.MaterialAutoCompleteTextView>(R.id.shareHostSpinner)
+        val hostInfo = view.findViewById<TextView>(R.id.shareHostInfo)
+        val filesSummary = view.findViewById<TextView>(R.id.shareFilesSummary)
+        val pickBtn = view.findViewById<MaterialButton>(R.id.btnSharePick)
+        val startBtn = view.findViewById<MaterialButton>(R.id.btnShareStart)
+        val progress = view.findViewById<LinearProgressIndicator>(R.id.shareProgress)
+        val status = view.findViewById<TextView>(R.id.shareStatus)
+        val resultsBox = view.findViewById<android.view.ViewGroup>(R.id.shareResults)
+
+        val hosts = ShareHosts.ALL
+        val names = hosts.map { "${it.name} (${it.domain})" }
+        hostSpinner.setSimpleItems(names.toTypedArray())
+        hostSpinner.setText(names[0], false)
+        var chosen = hosts[0]
+        val syncInfo = {
+            hostInfo.text = "\u23f3 ${chosen.life} \u2022 ${chosen.domain}" +
+                (if (chosen.maxSizeMB > 0) " \u2022 الحد ${chosen.maxSizeMB}MB" else "")
+        }
+        hostSpinner.setOnItemClickListener { _, _, pos, _ ->
+            chosen = hosts[pos]
+            syncInfo()
+        }
+        syncInfo()
+
+        sharePickCb = { uris ->
+            scope.launch {
+                val staged = mutableListOf<Pending>()
+                withContext(Dispatchers.IO) {
+                    for (uri in uris) {
+                        persistPermission(uri)
+                        val name = displayName(uri)
+                        try {
+                            val f = stageDocument(uri, name)
+                            staged.add(Pending(f, Kind.FILE, name, f.length()))
+                        } catch (_: Exception) { }
+                    }
+                }
+                shareFiles.clear()
+                shareFiles.addAll(staged)
+                filesSummary.isVisible = staged.isNotEmpty()
+                filesSummary.text = getString(
+                    R.string.share_files_summary,
+                    staged.joinToString(" ، ") { it.relPath },
+                )
+                startBtn.isEnabled = staged.isNotEmpty()
+            }
+        }
+
+        pickBtn.setOnClickListener {
+            haptic()
+            sharePick.launch(arrayOf("*/*"))
+        }
+
+        dialog.setOnDismissListener {
+            sharePickCb = null
+            shareJob?.cancel()
+            shareJob = null
+        }
+
+        startBtn.setOnClickListener {
+            haptic()
+            if (shareFiles.isEmpty()) {
+                Toast.makeText(this, getString(R.string.share_pick_first), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            shareJob?.cancel()
+            shareJob = scope.launch {
+                startBtn.isEnabled = false
+                resultsBox.removeAllViews()
+                resultsBox.isVisible = true
+                progress.isVisible = true
+                var ok = 0
+                val links = mutableListOf<String>()
+                for (doc in shareFiles) {
+                    status.isVisible = true
+                    try {
+                        val result = withContext(Dispatchers.IO) {
+                            ShareHosts.upload(
+                                chosen, doc.stagedFile, doc.relPath,
+                                "application/octet-stream",
+                            ) { bytes, total ->
+                                runOnUiThread {
+                                    if (total > 0) {
+                                        val pct = ((bytes * 100) / total).toInt().coerceIn(0, 100)
+                                        progress.setProgressCompat(pct, true)
+                                        status.text = getString(
+                                            R.string.share_percent, pct,
+                                            Formatter.formatShortFileSize(this@MainActivity, bytes),
+                                            Formatter.formatShortFileSize(this@MainActivity, total),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        ok++
+                        links.add(result.url)
+                        status.text = getString(R.string.share_done_item, doc.relPath, result.url)
+
+                        val card = LayoutInflater.from(this@MainActivity)
+                            .inflate(R.layout.item_share_result, resultsBox, false)
+                        card.findViewById<TextView>(R.id.resultUrl).text = result.url
+                        card.findViewById<TextView>(R.id.resultName).text =
+                            "${doc.relPath} \u2014 ${result.hostName} (${result.life})"
+                        card.findViewById<MaterialButton>(R.id.btnCopyLink).setOnClickListener {
+                            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("url", result.url))
+                            Toast.makeText(this@MainActivity,
+                                getString(R.string.share_copied), Toast.LENGTH_SHORT).show()
+                            haptic()
+                        }
+                        card.findViewById<MaterialButton>(R.id.btnSendLink).setOnClickListener {
+                            val send = Intent(Intent.ACTION_SEND)
+                            send.type = "text/plain"
+                            send.putExtra(Intent.EXTRA_TEXT, "${doc.relPath}\n${result.url}")
+                            startActivity(
+                                Intent.createChooser(send, getString(R.string.share_btn_send)))
+                        }
+                        resultsBox.addView(card)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        status.text =
+                            "\u26a0\ufe0f ${doc.relPath}: ${e.message ?: e.javaClass.simpleName}"
+                    }
+                }
+                progress.isVisible = false
+                status.text = getString(R.string.share_all_done, ok, shareFiles.size) +
+                    if (links.size == 1) "\n\n${links[0]}" else ""
+                startBtn.isEnabled = true
+                haptic(true)
+            }
+        }
+
+        dialog.show()
+    }
+
     private fun openUploadSheet(repo: org.json.JSONObject) {
         pendingDocs.clear()
         pickErrors.clear()
@@ -1329,6 +1720,10 @@ class MainActivity : AppCompatActivity() {
         }
         view.findViewById<MaterialButton>(R.id.btnPickZip).setOnClickListener {
             pickZip.launch(arrayOf("application/zip", "application/x-zip-compressed"))
+        }
+        view.findViewById<MaterialButton>(R.id.btnQuickShare).setOnClickListener { btn ->
+            haptic()
+            showShareSheet()
         }
         view.findViewById<MaterialButton>(R.id.btnAdvancedToggle).setOnClickListener { btn ->
             val box = view.findViewById<View>(R.id.advancedBox)
@@ -1535,6 +1930,7 @@ class MainActivity : AppCompatActivity() {
 class RepoAdapter(
     private var source: List<org.json.JSONObject>,
     private val onClick: (org.json.JSONObject) -> Unit,
+    private val onLongClick: (org.json.JSONObject) -> Unit,
 ) : RecyclerView.Adapter<RepoAdapter.Holder>() {
 
     private var shown: List<org.json.JSONObject> = source
@@ -1567,7 +1963,26 @@ class RepoAdapter(
             R.string.repo_meta, repo.optString("default_branch"), updated,
         )
         holder.root.setOnClickListener { onClick(repo) }
+        holder.root.setOnLongClickListener { v ->
+            onLongClick(repo)
+            hapticCompat(v)
+            true
+        }
         holder.upload.setOnClickListener { onClick(repo) }
+        holder.upload.setOnLongClickListener { v ->
+            onLongClick(repo)
+            hapticCompat(v)
+            true
+        }
+    }
+
+    companion object {
+        fun hapticCompat(v: View) {
+            try {
+                (v.context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+                    ?.vibrate(12L)
+            } catch (_: Exception) { }
+        }
     }
 
     fun filter(query: String) {

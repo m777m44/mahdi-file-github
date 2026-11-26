@@ -155,4 +155,49 @@
     <string name="cannot_create_dir">تعذّر إنشاء مجلد التجهيز: %1$s</string>
     <string name="stage_copy_failed">فشل نسخ الملف: %1$s — %2$s</string>
 
+
+    <!-- 1.10 — إدارة المستودعات -->
+    <string name="manager_title">⚙️ إدارة المستودع</string>
+    <string name="manager_subtitle">تحكم كامل: تصفح الملفات واحذفها، أو احذف المستودع بالكامل</string>
+    <string name="manager_browse">📂 تصفح الملفات وتحدد للحذف</string>
+    <string name="manager_delete_repo">🗑️ حذف المستودع بالكامل…</string>
+    <string name="manager_delete_scope">⚠️ حذف المستودع نهائي ولا يمكن التراجع — يتطلب توكن بصلاحية delete_repo (اضغط ضغطة طويلة على أي مستودع لفتح هذه اللوحة)</string>
+    <string name="browser_title">📂 تصفح الملفات</string>
+    <string name="browser_subtitle">اضغط على أي صف للتحديد أو الإلغاء — تحديد مجلد يحدد كل ما بداخله</string>
+    <string name="browser_none_selected">لم يُحدَّد شيء — %1$s مسار</string>
+    <string name="browser_selected">من المحدد للحذف: %1$d مسار</string>
+    <string name="browser_delete_selected">🗑️ حذف المحدد (%1$d)</string>
+    <string name="browser_select_all">☑️ تحديد الكل</string>
+    <string name="browser_loading">جارٍ تحميل ملفات المستودع…</string>
+    <string name="repo_meta_num">مجلد — %1$d ملف</string>
+    <string name="browser_empty">المستودع فارغ — لا يوجد ملفات</string>
+    <string name="browser_confirm_title">تأكيد الحذف النهائي</string>
+    <string name="browser_confirm_msg">سيتم حذف %1$d مسار نهائياً من المستودع %2$s (يُسجَّل كالتزام واحد).
+لا يمكن التراجع — هل أنت متأكد؟</string>
+    <string name="browser_deleted">تم حذف %1$d مسار ✅</string>
+    <string name="delete_repo_confirm_title">حذف المستودع نهائياً؟</string>
+    <string name="delete_repo_confirm_msg">سيُحذف المستودع «%1$s» مع كل ملفاته وسجله نهائياً من GitHub.
+خطوة خطيرة ولا يمكن التراجع عنها بأي شكل.</string>
+    <string name="delete_repo_confirm_btn">نعم، احذف نهائياً</string>
+    <string name="delete_repo_done">تم حذف المستودع %1$s</string>
+    <string name="delete_failed">فشل الحذف:</string>
+
+    <!-- 1.10 — المشاركة السريعة (من سكربت raf3ly) -->
+    <string name="share_title">⚡ مشاركة سريعة برابط مباشر</string>
+    <string name="share_subtitle">ارفع أي ملف إلى منصة مشاركة واحصل على رابط مباشر فوراً — منقول من سكربت raf3ly</string>
+    <string name="share_pick_files">اختر الملفات (يمكن أكثر من ملف)</string>
+    <string name="share_btn_pick">📁 اختر ملفات</string>
+    <string name="share_no_files">لم تختر ملفات بعد</string>
+    <string name="share_files_summary">الملفات المختارة: %1$s</string>
+    <string name="share_host_hint">منصة الرفع</string>
+    <string name="share_btn_start">⚡ ارفع واحصل على الرابط</string>
+    <string name="share_sending">جارٍ الرفع إلى %1$s…</string>
+    <string name="share_percent">%1$d%% — %2$s من %3$s</string>
+    <string name="share_done_item">✅ %1$s — %2$s</string>
+    <string name="share_btn_copy">نسخ الرابط</string>
+    <string name="share_btn_send">مشاركة</string>
+    <string name="share_open">فتح</string>
+    <string name="share_copied">تم نسخ الرابط ✅</string>
+    <string name="share_all_done">اكتمل الرفع — %1$d ناجح من %2$d</string>
+    <string name="share_pick_first">اختر ملفاً واحداً على الأقل</string>
 </resources>

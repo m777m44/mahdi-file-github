@@ -277,6 +277,100 @@ class GitHubClient(private val token: String) {
         )
     }
 
+    // ------------------------------------------------------------ إدارة المستودع (1.10)
+
+    private fun encPath(path: String): String =
+        path.split("/").joinToString("/") { seg ->
+            java.net.URLEncoder.encode(seg, "UTF-8").replace("+", "%20")
+        }
+
+    /** شجرة المستودع كاملة (مجلدات وملفات) على الفرع المحدد */
+    fun listTree(fullName: String, branch: String): JSONArray {
+        val (_, text) = call(
+            "GET", api("/repos/$fullName/git/trees/$branch?recursive=1"),
+        )
+        return JSONObject(text).optJSONArray("tree") ?: JSONArray()
+    }
+
+    fun getContentsMeta(fullName: String, path: String, ref: String): JSONObject {
+        val (_, text) = call(
+            "GET", api("/repos/$fullName/contents/${encPath(path)}?ref=" +
+                java.net.URLEncoder.encode(ref, "UTF-8")),
+        )
+        return JSONObject(text)
+    }
+
+    /** حذف ملف واحد عبر Contents API */
+    fun deleteFile(fullName: String, path: String, branch: String, sha: String, message: String) {
+        json(
+            "DELETE", "/repos/$fullName/contents/${encPath(path)}",
+            JSONObject().put("sha", sha).put("branch", branch).put("message", message),
+        )
+    }
+
+    /**
+     * حذف مجموعة مسارات في التزام واحد (شجرة جديدة مع sha=null لكل مسار محذوف).
+     * يعيد عدد المسارات المُحذوفة. أسرع بكثير من الحذف ملفاً ملفاً.
+     */
+    fun deletePathsViaTree(fullName: String, branch: String, paths: List<String>): Int {
+        if (paths.isEmpty()) return 0
+        val ref = getRef(fullName, branch)
+        val headSha = ref.getJSONObject("object").getString("sha")
+        val headCommit = getCommit(fullName, headSha)
+        val baseTree = headCommit.getJSONObject("tree").getString("sha")
+        val tree = JSONArray()
+        for (p in paths) {
+            tree.put(
+                JSONObject().put("path", p).put("mode", "100644")
+                    .put("type", "blob").put("sha", JSONObject.NULL),
+            )
+        }
+        val newTree = createTree(fullName, baseTree, tree)
+        val commit = createCommit(
+            fullName, "حذف ${paths.size} مسار عبر تطبيق GitHub Uploader",
+            newTree.getString("sha"), listOf(headSha),
+        )
+        updateRef(fullName, branch, commit.getString("sha"))
+        return paths.size
+    }
+
+    /** حذف المسارات مع الرجوع إلى الحذف ملفاً ملفاً عند فشل طريقة الشجرة */
+    fun deletePathsRobust(fullName: String, branch: String, paths: List<String>): Int {
+        try {
+            return deletePathsViaTree(fullName, branch, paths)
+        } catch (e: GitHubException) {
+            if (e.code !in listOf(422, 500, 502, 503, 504)) throw e
+        }
+        // خطة بديلة: حذف ملفاً ملفاً (الحدة الأبطأ لكن أضمن)
+        var deleted = 0
+        for (p in paths) {
+            try {
+                val meta = getContentsMeta(fullName, p, branch)
+                deleteFile(fullName, p, branch, meta.getString("sha"),
+                    "حذف ${p.substringAfterLast('/')} عبر التطبيق")
+                deleted++
+            } catch (e: GitHubException) {
+                if (e.code !in listOf(404, 409)) throw e
+            }
+        }
+        return deleted
+    }
+
+    /** حذف المستودع بالكامل — يتطلب توكن بصلاحية delete_repo */
+    fun deleteRepo(fullName: String) {
+        try {
+            call("DELETE", api("/repos/$fullName"))
+        } catch (e: GitHubException) {
+            if (e.code == 403) {
+                throw GitHubException(403,
+                    "التوكن الحالي لا يملك صلاحية حذف المستودعات (delete_repo) — " +
+                        "أنشئ Personal Access Token جديد من github.com/settings/tokens وفعّل صلاحية delete_repo",
+                    e.retryAfterSeconds)
+            }
+            throw e
+        }
+    }
+
     fun putFile(fullName: String, path: String, content: String, message: String, branch: String): JSONObject {
         val b64 = android.util.Base64.encodeToString(
             content.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP,
