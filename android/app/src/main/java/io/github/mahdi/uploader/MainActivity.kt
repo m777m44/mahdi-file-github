@@ -388,21 +388,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         btnLoginGitHub.setOnClickListener { startDeviceFlow() }
-        findViewById<MaterialButton>(R.id.btnQuickShareLogin).setOnClickListener { btn ->
-            haptic()
-            btn.animate().scaleX(0.95f).scaleY(0.95f).setDuration(70L)
-                .withEndAction {
-                    btn.animate().scaleX(1f).scaleY(1f).setDuration(130L)
-                        .setInterpolator(android.view.animation.OvershootInterpolator(2.2f)).start()
-                }.start()
-            showShareSheet()
-        }
         btnOpenBrowser.setOnClickListener {
             val url = btnOpenBrowser.tag as? String
             if (url != null) startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         }
         btnPatLogin.setOnClickListener { loginWithPat() }
         btnSettings.setOnClickListener { showSettingsDialog() }
+        findViewById<ImageButton>(R.id.btnShareQuick).setOnClickListener { btn ->
+            haptic()
+            // نبضة نقر أنيقة على الزر الدائري
+            btn.animate().scaleX(0.85f).scaleY(0.85f).setDuration(70L)
+                .withEndAction {
+                    btn.animate().scaleX(1f).scaleY(1f).setDuration(150L)
+                        .setInterpolator(android.view.animation.OvershootInterpolator(2.4f)).start()
+                }.start()
+            showShareSheet()
+        }
         btnLogout.setOnClickListener {
             Store.setToken(this, "")
             api = null
@@ -1550,6 +1551,19 @@ class MainActivity : AppCompatActivity() {
     private var shareJob: kotlinx.coroutines.Job? = null
 
     private fun showShareSheet() {
+        try {
+            showShareSheetInner()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // حماية نهائية: لا انهيار أبداً — رسالة عربية واضحة فقط
+            Toast.makeText(this,
+                "\u26a0\ufe0f تعذر فتح شاشة المشاركة: ${e.message ?: e.javaClass.simpleName}",
+                Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showShareSheetInner() {
         newStagingDir()
         val view = LayoutInflater.from(this).inflate(R.layout.sheet_share, null)
         val dialog = BottomSheetDialog(this)
@@ -1566,7 +1580,11 @@ class MainActivity : AppCompatActivity() {
 
         val hosts = ShareHosts.ALL
         val names = hosts.map { "${it.name} (${it.domain})" }
-        hostSpinner.setSimpleItems(names.toTypedArray())
+        // إصلاح الانهيار: setSimpleItems يتطلب أندرويد 11+ — ArrayAdapter يعمل على كل الأجهزة
+        val spinnerAdapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_list_item_1, names,
+        )
+        hostSpinner.setAdapter(spinnerAdapter)
         hostSpinner.setText(names[0], false)
         var chosen = hosts[0]
         val syncInfo = {
@@ -1729,16 +1747,6 @@ class MainActivity : AppCompatActivity() {
         }
         view.findViewById<MaterialButton>(R.id.btnPickZip).setOnClickListener {
             pickZip.launch(arrayOf("application/zip", "application/x-zip-compressed"))
-        }
-        view.findViewById<MaterialButton>(R.id.btnQuickShare).setOnClickListener { btn ->
-            haptic()
-            // نبضة نقر أنيقة: انكماش سريع ثم ارتداد للخارج
-            btn.animate().scaleX(0.92f).scaleY(0.92f).setDuration(70L)
-                .withEndAction {
-                    btn.animate().scaleX(1f).scaleY(1f).setDuration(130L)
-                        .setInterpolator(android.view.animation.OvershootInterpolator(2.2f)).start()
-                }.start()
-            showShareSheet()
         }
         view.findViewById<MaterialButton>(R.id.btnAdvancedToggle).setOnClickListener { btn ->
             val box = view.findViewById<View>(R.id.advancedBox)

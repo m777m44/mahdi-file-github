@@ -20,49 +20,14 @@
             android:layout_gravity="center"
             android:background="@drawable/bg_input" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/upload_title"
-                android:textColor="@color/text"
-                android:textSize="18sp"
-                android:textStyle="bold" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnQuickShare"
-                android:layout_width="wrap_content"
-                android:layout_height="46dp"
-                android:background="@drawable/bg_share_grad"
-                android:insetLeft="0dp"
-                android:insetRight="0dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="@string/share_short_btn"
-                android:textColor="#FFFFFF"
-                android:textSize="13.5sp"
-                android:textStyle="bold"
-                app:backgroundTint="@null"
-                app:icon="@drawable/ic_qshare"
-                app:iconGravity="textStart"
-                app:iconTint="#FFFFFF"
-                app:rippleColor="#40FFFFFF" />
-        </LinearLayout>
-
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/share_top_hint"
-            android:textColor="@color/muted"
-            android:textSize="11.5sp" />
+            android:layout_marginTop="18dp"
+            android:text="@string/upload_title"
+            android:textColor="@color/text"
+            android:textSize="18sp"
+            android:textStyle="bold" />
 
         <com.google.android.material.textfield.TextInputLayout
             style="@style/Widget.Material3.TextInputLayout.FilledBox"
