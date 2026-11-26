@@ -41,7 +41,12 @@
     <string name="repo_create_failed">فشل إنشاء المستودع:</string>
 
     <!-- Upload sheet -->
-    <string name="upload_title">⬆ رفع ملفات إلى مستودع</string>
+        <string name="mode_github">🚀 رفع إلى GitHub</string>
+    <string name="mode_direct">⚡ رابط مباشر</string>
+    <string name="share_center_title">⚡ مركز الرفع</string>
+    <string name="share_center_subtitle">روابط مباشرة في ثوانٍ — أو ارفع إلى مستودعك على GitHub</string>
+    <string name="need_repo_for_github">سجّل الدخول أولاً لرفع الملفات إلى GitHub</string>
+<string name="upload_title">⬆ رفع ملفات إلى مستودع</string>
     <string name="upload_repo_hint">المستودع owner/name</string>
     <string name="branch_label">الفرع Branch (فارغ = الافتراضي)</string>
     <string name="branch_hint_custom">مثال: main أو feature/new</string>

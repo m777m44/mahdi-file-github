@@ -1578,6 +1578,14 @@ class MainActivity : AppCompatActivity() {
         val status = view.findViewById<TextView>(R.id.shareStatus)
         val resultsBox = view.findViewById<android.view.ViewGroup>(R.id.shareResults)
 
+        // زر تبديل الوجهة في نفس المكان أعلى الورقة — مثل raf3ly
+        view.findViewById<MaterialButton>(R.id.btnModeDirect).isChecked = true
+        view.findViewById<MaterialButton>(R.id.btnModeGithub).setOnClickListener {
+            haptic()
+            dialog.dismiss()
+            switchToGithubUpload()
+        }
+
         val hosts = ShareHosts.ALL
         val names = hosts.map { "${it.name} (${it.domain})" }
         // إصلاح الانهيار: setSimpleItems يتطلب أندرويد 11+ — ArrayAdapter يعمل على كل الأجهزة
@@ -1709,6 +1717,16 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    /** التبديل من الرابط المباشر إلى رفع GitHub — يفتح ورقة الرفع بأول مستودع متاح */
+    private fun switchToGithubUpload() {
+        val repo = repos.firstOrNull()
+        if (repo == null) {
+            Toast.makeText(this, getString(R.string.need_repo_for_github), Toast.LENGTH_LONG).show()
+            return
+        }
+        openUploadSheet(repo)
+    }
+
     private fun openUploadSheet(repo: org.json.JSONObject) {
         pendingDocs.clear()
         pickErrors.clear()
@@ -1719,6 +1737,14 @@ class MainActivity : AppCompatActivity() {
         val dialog = BottomSheetDialog(this)
         dialog.setContentView(view)
         uploadSheet = dialog
+
+        // زر تبديل الوجهة في نفس المكان أعلى الورقة — مثل raf3ly
+        view.findViewById<MaterialButton>(R.id.btnModeGithub).isChecked = true
+        view.findViewById<MaterialButton>(R.id.btnModeDirect).setOnClickListener {
+            haptic()
+            dialog.dismiss()
+            showShareSheet()
+        }
 
         val repoInput = view.findViewById<EditText>(R.id.uploadRepoInput)
         val branchInput = view.findViewById<EditText>(R.id.uploadBranchInput)
