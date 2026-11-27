@@ -62,6 +62,13 @@
     <string name="sc_camera_failed">تعذر فتح الكاميرا — جرّب زر الصور</string>
     <string name="sc_busy">انتظر انتهاء الرفع الحالي</string>
     <string name="sc_platforms_title">🌍 المنصات المتاحة (14)</string>
+    <string name="sc_filter_all">🌐 الكل</string>
+    <string name="sc_filter_permanent">♾️ دائم</string>
+    <string name="sc_filter_temp">⏳ مؤقت</string>
+    <string name="sc_filter_fast">⚡ سريع</string>
+    <string name="sc_clear_history">🗑️ مسح السجل</string>
+    <string name="sc_history_cleared">تم مسح سجل الروابط ✅</string>
+    <string name="sc_open_failed">⚠️ تعذر فتح مركز الرفع المباشر — جرب مرة أخرى</string>
     <string name="sc_platforms_hint">اضغط على أي منصة لاختيارها يدوياً — أو فعّل الاختيار الذكي</string>
 <string name="mode_github">🚀 رفع إلى GitHub</string>
     <string name="mode_direct">⚡ رابط مباشر</string>

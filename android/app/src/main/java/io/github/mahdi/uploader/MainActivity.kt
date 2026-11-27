@@ -403,7 +403,7 @@ class MainActivity : AppCompatActivity() {
                         .setInterpolator(android.view.animation.OvershootInterpolator(2.4f)).start()
                 }.start()
             // ⚡ مركز الرفع المباشر — واجهة كاملة بأسلوب raf3ly مع 14 منصة
-            startActivity(android.content.Intent(this, ShareCenterActivity::class.java))
+            openShareCenterSafely()
         }
         btnLogout.setOnClickListener {
             Store.setToken(this, "")
@@ -697,6 +697,20 @@ class MainActivity : AppCompatActivity() {
                     return@launch
                 }
             }
+        }
+    }
+
+    /**
+     * 🛡️ فتح مركز الرفع المباشر بغلاف حماية —
+     * إذا فشل الفتح على أي جهاز لأي سبب تظهر رسالة ودية بدل انهيار التطبيق.
+     */
+    private fun openShareCenterSafely() {
+        try {
+            startActivity(android.content.Intent(this, ShareCenterActivity::class.java))
+        } catch (e: Throwable) {
+            try {
+                Toast.makeText(this, getString(R.string.sc_open_failed), Toast.LENGTH_LONG).show()
+            } catch (_: Throwable) { }
         }
     }
 
@@ -1758,7 +1772,7 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<MaterialButton>(R.id.btnModeDirect).setOnClickListener {
             haptic()
             dialog.dismiss()
-            startActivity(android.content.Intent(this, ShareCenterActivity::class.java))
+            openShareCenterSafely()
         }
 
         val repoInput = view.findViewById<EditText>(R.id.uploadRepoInput)

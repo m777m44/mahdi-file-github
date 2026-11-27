@@ -16,8 +16,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.isVisible
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.android.material.switchmaterial.SwitchMaterial
 import java.io.File
 
 /**
@@ -33,6 +33,7 @@ class ShareCenterActivity : AppCompatActivity() {
     private var chosenHost: ShareHosts.Host = ShareHosts.ALL[0]
     private var autoPick = true
     private var uploadJobActive = false
+    private var filterMode = 0 // 0=الكل 1=دائم 2=مؤقت 3=سريع
 
     private lateinit var queueSummary: TextView
     private lateinit var chosenHostView: TextView
@@ -40,7 +41,14 @@ class ShareCenterActivity : AppCompatActivity() {
     private lateinit var progress: LinearProgressIndicator
     private lateinit var status: TextView
     private lateinit var resultsBox: LinearLayout
-    private lateinit var swAuto: MaterialSwitch
+    private lateinit var swAuto: SwitchMaterial
+
+    /** 🛡️ فرض العربية بأسلوب آمن موحّد (نفس نمط MainActivity) — قبل إنشاء أي مورد */
+    override fun attachBaseContext(newBase: Context) {
+        val config = android.content.res.Configuration(newBase.resources.configuration)
+        config.setLocale(java.util.Locale("ar"))
+        super.attachBaseContext(newBase.createConfigurationContext(config))
+    }
 
     private val pickAny = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         handlePicked(uris)
@@ -60,11 +68,18 @@ class ShareCenterActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // فرض العربية
-        val conf = android.content.res.Configuration(resources.configuration)
-        conf.setLocale(java.util.Locale("ar"))
-        applyOverrideConfiguration(conf)
+        // 🛡️ غلاف دفاعي: أي فشل في تهيئة الواجهة لا يُنهار التطبيق — يُغلق بهدوء مع رسالة
+        try {
+            initUi(savedInstanceState)
+        } catch (e: Throwable) {
+            try {
+                Toast.makeText(this, "⚠️ تعذر فتح شاشة المشاركة", Toast.LENGTH_LONG).show()
+            } catch (_: Throwable) { }
+            finish()
+        }
+    }
 
+    private fun initUi(@Suppress("UNUSED_PARAMETER") savedInstanceState: Bundle?) {
         setContentView(R.layout.activity_share_center)
 
         queueSummary = findViewById(R.id.tvQueueSummary)
@@ -112,9 +127,38 @@ class ShareCenterActivity : AppCompatActivity() {
         }
 
         startBtn.setOnClickListener { startUpload() }
-        buildPlatformList()
-        refreshHostLabel()
-        renderHistory()
+        setupFilters()
+        findViewById<MaterialButton>(R.id.btnClearHistory).setOnClickListener {
+            hapticCompat(this)
+            ShareHistory.clear(this)
+            resultsBox.removeAllViews()
+            resultsBox.isVisible = false
+            Toast.makeText(this, getString(R.string.sc_history_cleared), Toast.LENGTH_SHORT).show()
+        }
+        try {
+            buildPlatformList()
+            refreshHostLabel()
+            renderHistory()
+        } catch (_: Throwable) { }
+    }
+
+    /** 🎛️ فلاتر المنصات: الكل / دائم / مؤقت / سريع */
+    private fun setupFilters() {
+        val ids = intArrayOf(R.id.btnFilterAll, R.id.btnFilterPermanent,
+            R.id.btnFilterTemp, R.id.btnFilterFast)
+        for ((i, id) in ids.withIndex()) {
+            val btn = findViewById<MaterialButton>(id)
+            btn.setOnClickListener {
+                hapticCompat(this)
+                filterMode = i
+                for ((j, other) in ids.withIndex()) {
+                    val on = j == i
+                    findViewById<MaterialButton>(other).alpha = if (on) 1f else 0.45f
+                }
+                try { buildPlatformList() } catch (_: Throwable) { }
+            }
+            btn.alpha = if (i == 0) 1f else 0.45f
+        }
     }
 
     private fun handlePicked(uris: List<Uri>) {
@@ -179,7 +223,15 @@ class ShareCenterActivity : AppCompatActivity() {
     private fun buildPlatformList() {
         val box = findViewById<LinearLayout>(R.id.platformsBox)
         box.removeAllViews()
-        for (host in ShareHosts.ALL) {
+        val hosts = ShareHosts.ALL.filter { h ->
+            when (filterMode) {
+                1 -> h.permanent
+                2 -> !h.permanent
+                3 -> h.fast
+                else -> true
+            }
+        }
+        for ((idx, host) in hosts.withIndex()) {
             val card = LayoutInflater.from(this).inflate(R.layout.item_host_card, box, false)
             card.findViewById<TextView>(R.id.hostEmoji).text =
                 if (host.imageOnly) "🖼️" else "☁️"
@@ -199,14 +251,25 @@ class ShareCenterActivity : AppCompatActivity() {
                 swAuto.isChecked = false
                 chosenHost = host
                 refreshHostLabel()
-                // إبراز البطاقة المختارة
+                // إبراز البطاقة المختارة يدوياً بلون أخضر
                 for (i in 0 until box.childCount) {
                     val mark = box.getChildAt(i).findViewById<TextView>(R.id.hostSelectMark)
-                    mark.text = if (i == box.indexOfChild(card)) "●" else "●"
                     mark.setTextColor(if (i == box.indexOfChild(card)) 0xFF3FB950.toInt() else 0xFF30363D.toInt())
                 }
             }
             box.addView(card)
+            // ✨ أنيميشن دخول متدرجة أنيقة لكل بطاقة
+            card.alpha = 0f
+            card.translationY = 42f
+            card.animate().alpha(1f).translationY(0f).setDuration(230L)
+                .setStartDelay((idx * 45L))
+                .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f))
+                .start()
+            // إبراز البطاقة المختارة سابقاً
+            if (!autoPick && host.id == chosenHost.id) {
+                val mark = card.findViewById<TextView>(R.id.hostSelectMark)
+                mark.setTextColor(0xFF3FB950.toInt())
+            }
         }
     }
 
@@ -296,8 +359,8 @@ class ShareCenterActivity : AppCompatActivity() {
     private fun renderHistory() {
         val items = ShareHistory.load(this)
         if (items.isEmpty()) return
-        val card = LayoutInflater.from(this).inflate(R.layout.item_share_result, resultsBox, false).parent
-        // السجل يُعرض أعلى النتائج عند الفتح الأول — نجعلها بسيطة: أضف أحدث 5 روابط
+        resultsBox.isVisible = true
+        // أحدث 5 روابط من السجل تُعرض أعلى النتائج
         for (it in items.take(5)) addResultCard(it.name,
             ShareHosts.SharedResult(it.url, it.host, it.life))
     }
