@@ -11,6 +11,7 @@ import okio.BufferedSink
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import java.io.IOException
 
 /**
@@ -28,22 +29,128 @@ object ShareHosts {
         val direct: Boolean,       // الرابط يعرض الملف مباشرة
         val imageOnly: Boolean,    // الصور فقط
         val maxSizeMB: Int,        // 0 = بلا حد معلن
+        val note: String = "",     // وصف عربي للمنصة
+        val verified: Boolean = false, // مختبرة وتعمل ✓
+        val fast: Boolean = false, // منصة سريعة خاصة بالصور والملفات الصغيرة
     ) {
         override fun toString(): String = name
     }
 
     val ALL: List<Host> = listOf(
-        Host("catbox", "Catbox", "catbox.moe", "دائم — رابط مباشر", true, true, false, 200),
-        Host("litterbox", "Litterbox (مؤقت)", "litter.catbox.moe", "مؤقت — 72 ساعة", false, true, false, 150),
-        Host("x0", "0x0.st", "0x0.st", "دائم تقريباً — كبير", true, true, false, 512),
-        Host("pomf", "Pomf", "pomf.lain.la", "دائم — رابط مباشر", true, true, false, 1000),
-        Host("gofile", "Gofile", "gofile.io", "دائم — صفحة تحميل", true, false, false, 0),
-        Host("uguu", "Uguu", "uguu.se", "مؤقت — 3 ساعات", false, true, false, 128),
-        Host("tmpfiles", "tmpfiles.org", "tmpfiles.org", "مؤقت — 60 دقيقة", false, true, false, 100),
-        Host("pixhost", "PixHost — صور", "pixhost.to", "دائم — صور فقط", true, true, true, 10),
+        Host("catbox", "Catbox", "catbox.moe", "دائم — رابط مباشر", true, true, false, 200,
+            "بدون حد زمني — الأفضل للاحتفاظ بالملفات للأبد.", verified = true),
+        Host("x0", "0x0.st", "0x0.st", "30 يوم+ — كبير", true, true, false, 512,
+            "الأكثر استقراراً — لينك مباشر يعمل في أي مكان.", verified = true),
+        Host("pomf", "Pomf", "pomf.lain.la", "30 يوم — رابط مباشر", true, true, false, 1000,
+            "سريع للصور والملفات الصغيرة.", verified = true, fast = true),
+        Host("kappa", "Kappa", "kappa.lol", "30 يوم — رابط مباشر", true, true, false, 1000,
+            "سريع جداً ورد فوري، لينك مباشر.", verified = true, fast = true),
+        Host("0x0st", "0x0.st (بديل)", "0x0.st", "30 يوم+ — مباشر", true, true, false, 512,
+            "من أقدم خدمات الرفع المجهولة — لينك مباشر.", fast = false),
+        Host("fars", "Fars.ee", "fars.ee", "30 يوم — رابط مباشر", true, true, false, 512,
+            "نسخة من عائلة 0x0 — لينك مباشر بدون إعلانات."),
+        Host("gofile", "Gofile", "gofile.io", "10 أيام — صفحة تحميل", false, false, false, 0,
+            "الأفضل للملفات الكبيرة جداً (فيديو/أرشيف) — بلا حد للحجم.", verified = true),
+        Host("quax", "Qu.ax", "qu.ax", "7 أيام — مباشر", false, true, false, 2048,
+            "سريع جداً، بيرجّع لينك مباشر.", verified = true, fast = true),
+        Host("filebin", "Filebin", "filebin.net", "6 أيام — مجلد مشاركة", false, false, false, 0,
+            "بينشئ مجلد (bin) بيتجمع فيه كل ملفاتك — رابط صفحة تحميل.", verified = true),
+        Host("litterbox", "Litterbox (مؤقت)", "litter.catbox.moe", "مؤقت — 72 ساعة", false, true, false, 150,
+            "نسخة مؤقتة من catbox — مثالي للمشاركة اللحظية."),
+        Host("pixhost", "PixHost — صور", "pixhost.to", "دائم — صور فقط", true, true, true, 10,
+            "استضافة صور (JPG/PNG/GIF) — لينك مباشر وصفحة عرض."),
+        Host("pixeldrain", "Pixeldrain", "pixeldrain.com", "60 يوم — صفحة تحميل", false, false, false, 0,
+            "مساحة كبيرة للملفات، بيرجّع صفحة تنزيل سريعة.", verified = true),
+        Host("uguu", "Uguu", "uguu.se", "مؤقت — 3 ساعات", false, true, false, 128,
+            "مؤقت — للمشاركة اللحظية.", verified = true, fast = true),
+        Host("tmpfiles", "tmpfiles.org", "tmpfiles.org", "مؤقت — 60 دقيقة", false, true, false, 100,
+            "مؤقت جداً — بيتم استخراج اللينك المباشر من صفحته.", verified = true),
     )
 
     fun byId(id: String): Host = ALL.find { it.id == id } ?: ALL[0]
+
+    // ------------------------------------------------------------ أنواع الملفات والاختيار الذكي
+
+    enum class FileKind { IMAGE, VIDEO, AUDIO, ARCHIVE, DOC, OTHER }
+
+    /** يتعرف على نوع الملف من الامتداد أو MIME */
+    fun kindOf(name: String, mime: String): FileKind {
+        val m = mime.lowercase(); val n = name.lowercase()
+        return when {
+            m.startsWith("image/") || listOf(".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg").any { n.endsWith(it) } -> FileKind.IMAGE
+            m.startsWith("video/") || listOf(".mp4", ".mkv", ".avi", ".mov", ".webm", ".3gp").any { n.endsWith(it) } -> FileKind.VIDEO
+            m.startsWith("audio/") || listOf(".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac").any { n.endsWith(it) } -> FileKind.AUDIO
+            m == "application/zip" || listOf(".zip", ".rar", ".7z", ".tar", ".gz", ".apk").any { n.endsWith(it) } -> FileKind.ARCHIVE
+            m.startsWith("text/") || listOf(".txt", ".md", ".pdf", ".doc", ".docx", ".json", ".xml", ".csv").any { n.endsWith(it) } -> FileKind.DOC
+            else -> FileKind.OTHER
+        }
+    }
+
+    /** وصف عربي جميل لنوع الملف مع أيقونة */
+    fun kindLabel(kind: FileKind): String = when (kind) {
+        FileKind.IMAGE -> "🖼️ صورة"
+        FileKind.VIDEO -> "🎬 فيديو"
+        FileKind.AUDIO -> "🎵 صوت"
+        FileKind.ARCHIVE -> "📦 أرشيف"
+        FileKind.DOC -> "📄 مستند"
+        FileKind.OTHER -> "📁 ملف"
+    }
+
+    /**
+     * الاختيار الذكي 🤖 — يختار المنصة الأنسب تلقائياً حسب نوع الملف وحجمه:
+     * صورة → Catbox (دائم ومباشر) ثم Kappa/Pomf السريعة.
+     * فيديو كبير → Gofile (بلا حد للحجم)، صغير → Catbox.
+     * أرشيف كبير → Gofile، متوسط → Catbox، صغير → 0x0.st.
+     * صوت → Catbox، مستند → Catbox ثم Pomf.
+     */
+    fun pickAuto(file: File, mime: String): Host {
+        val kind = kindOf(file.name, mime)
+        val sizeMB = file.length() / (1024.0 * 1024.0)
+        return when (kind) {
+            FileKind.IMAGE -> when {
+                sizeMB <= 10 -> ALL.first { it.id == "catbox" }
+                sizeMB <= 200 -> ALL.first { it.id == "catbox" }
+                else -> ALL.first { it.id == "gofile" }
+            }
+            FileKind.VIDEO -> when {
+                sizeMB <= 190 -> ALL.first { it.id == "catbox" }
+                else -> ALL.first { it.id == "gofile" }
+            }
+            FileKind.AUDIO -> ALL.first { it.id == "catbox" }
+            FileKind.ARCHIVE -> when {
+                sizeMB > 190 -> ALL.first { it.id == "gofile" }
+                sizeMB <= 50 -> ALL.first { it.id == "x0" }
+                else -> ALL.first { it.id == "catbox" }
+            }
+            FileKind.DOC -> when {
+                sizeMB <= 100 -> ALL.first { it.id == "pomf" }
+                else -> ALL.first { it.id == "gofile" }
+            }
+            FileKind.OTHER -> when {
+                sizeMB > 190 -> ALL.first { it.id == "gofile" }
+                sizeMB <= 200 -> ALL.first { it.id == "catbox" }
+                else -> ALL.first { it.id == "x0" }
+            }
+        }
+    }
+
+    /** سلسلة بدائل ذكية: المنصة المختارة أولاً ثم بدائل مناسبة لنفس النوع عند الفشل */
+    fun fallbackChain(primary: Host, file: File, mime: String): List<Host> {
+        val kind = kindOf(file.name, mime)
+        val sizeMB = file.length() / (1024.0 * 1024.0)
+        val chain = mutableListOf(primary)
+        fun add(id: String) { ALL.find { it.id == id }?.let { if (it !in chain) chain.add(it) } }
+        when (kind) {
+            FileKind.IMAGE -> { add("kappa"); add("pomf"); add("quax") }
+            FileKind.VIDEO -> { add("gofile"); add("quax"); add("pixeldrain") }
+            FileKind.AUDIO -> { add("x0"); add("kappa"); add("gofile") }
+            FileKind.ARCHIVE -> { add("gofile"); add("x0"); add("pixeldrain") }
+            FileKind.DOC -> { add("pomf"); add("x0"); add("gofile") }
+            FileKind.OTHER -> { add("x0"); add("pomf"); add("gofile") }
+        }
+        if (sizeMB > 190) { add("gofile"); add("filebin"); add("pixeldrain") }
+        return chain
+    }
 
     private val http: OkHttpClient = GitHubClient.SHARED_HTTP
     private val ua = "Mozilla/5.0 (Linux; Android 14) GitHubUploader/1.10"
@@ -103,6 +210,61 @@ object ShareHosts {
             SharedResult(u, host.name, host.life)
         }
 
+        "kappa" -> {
+            val body = postMultipart(
+                "https://kappa.lol/api/upload", emptyMap(), "file",
+                file, fileName, mime, onProgress,
+            )
+            val o = JSONObject(body)
+            val idv = o.optString("id")
+            if (idv.isEmpty()) throw IOException(shortBody(body))
+            SharedResult("https://kappa.lol/$idv", host.name, host.life)
+        }
+
+        "quax" -> {
+            val body = postMultipart(
+                "https://qu.ax/upload", emptyMap(), "file",
+                file, fileName, mime, onProgress,
+            )
+            val files = JSONObject(body).optJSONArray("files")
+            val u = files?.optJSONObject(0)?.optString("url")
+                ?.takeIf { it.startsWith("http") }
+                ?: files?.optJSONObject(0)?.optString("link")?.takeIf { it.startsWith("http") }
+            if (u == null) throw IOException(shortBody(body))
+            SharedResult(u, host.name, host.life)
+        }
+
+        "0x0st", "fars" -> SharedResult(
+            text(postMultipart(
+                if (host.id == "fars") "https://fars.ee" else "https://0x0.st",
+                emptyMap(), "file", file, fileName, mime, onProgress,
+            ), null), host.name, host.life)
+
+        "filebin" -> {
+            // filebin: PUT خام إلى مجلد (bin) ثم يعيد رابط المجلد — يجمع كل ملفاتك بمكان
+            val bin = "mahdi" + (System.currentTimeMillis() / 1000)
+            val safe = fileName.replace(" ", "_")
+            val url = "https://filebin.net/$bin/" + java.net.URLEncoder.encode(safe, "UTF-8").replace("+", "%20")
+            val req = Request.Builder().url(url)
+                .header("User-Agent", ua)
+                .put(CountingFileBody(file, mime, onProgress))
+                .build()
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+            }
+            SharedResult("https://filebin.net/$bin", host.name, host.life)
+        }
+
+        "pixeldrain" -> {
+            val body = postMultipart(
+                "https://pixeldrain.com/api/file", emptyMap(), "file",
+                file, fileName, mime, onProgress,
+            )
+            val id = JSONObject(body).optString("id")
+            if (id.isEmpty()) throw IOException(shortBody(body))
+            SharedResult("https://pixeldrain.com/u/$id", host.name, host.life)
+        }
+
         "gofile" -> {
             var server = "store1"
             try {
@@ -141,6 +303,33 @@ object ShareHosts {
         }
 
         else -> throw IOException("منصة غير معروفة")
+    }
+
+    /**
+     * رفع بذكاء مع سلسلة بدائل تلقائية: يجرّب المنصة المختارة، وعند فشلها
+     * ينتقل تلقائياً للمنصة الأنسب التالية حتى ينجح الرفع — مثل آلية raf3ly.
+     */
+    fun uploadWithFallback(
+        primary: Host,
+        file: File,
+        fileName: String,
+        mime: String,
+        onProgress: (Long, Long) -> Unit,
+        onTryingHost: ((Host, Int) -> Unit)? = null,
+    ): SharedResult {
+        var lastError: Exception? = null
+        val chain = fallbackChain(primary, file, mime)
+        for ((idx, host) in chain.withIndex()) {
+            onTryingHost?.invoke(host, idx + 1)
+            try {
+                return upload(host, file, fileName, mime, onProgress)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
+        throw lastError ?: IOException("فشل الرفع على كل المنصات")
     }
 
     // ------------------------------------------------------------ helpers

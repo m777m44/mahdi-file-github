@@ -41,7 +41,29 @@
     <string name="repo_create_failed">فشل إنشاء المستودع:</string>
 
     <!-- Upload sheet -->
-        <string name="mode_github">🚀 رفع إلى GitHub</string>
+            <string name="sc_switch_github">🔼 التبديل إلى رفع GitHub 📂</string>
+    <string name="sc_close">إغلاق</string>
+    <string name="sc_title">⚡ مركز الرفع المباشر</string>
+    <string name="sc_subtitle">روابط مباشرة في ثوانٍ — 14 منصة مجهولة جاهزة للعمل</string>
+    <string name="sc_auto_title">🤖 الاختيار الذكي التلقائي</string>
+    <string name="sc_auto_desc">يتعرف على نوع الملف (صورة/فيديو/صوت/أرشيف) ويختار المنصة الأنسب + بدائل تلقائية عند الفشل</string>
+    <string name="sc_pick_files">📁 ملفات</string>
+    <string name="sc_pick_images">🖼️ صور</string>
+    <string name="sc_camera">📷 كاميرا</string>
+    <string name="sc_queue_empty">لم تختر أي ملفات بعد — استخدم الأزرار أعلاه</string>
+    <string name="sc_queue_summary">✅ %1$d ملف — %2$s جاهز للرفع</string>
+    <string name="sc_auto_host">🤖 تلقائي — يختار المنصة الأنسب حسب نوع وحجم كل ملف</string>
+    <string name="sc_start_upload">⚡ ارفع واحصل على روابط مباشرة</string>
+    <string name="sc_uploading">📤 رفع %1$d من %2$d — %3$s</string>
+    <string name="sc_fallback">🔄 جرّب منصة %1$s (المحاولة %2$d)…</string>
+    <string name="sc_all_done">🎉 انتهى — نجح %1$d من %2$d ملف. الروابط أعلاه جاهزة للنسخ والمشاركة</string>
+    <string name="sc_pick_first">اختر ملفاً واحداً على الأقل أولاً</string>
+    <string name="sc_staging">⏳ تجهيز %1$d ملف…</string>
+    <string name="sc_camera_failed">تعذر فتح الكاميرا — جرّب زر الصور</string>
+    <string name="sc_busy">انتظر انتهاء الرفع الحالي</string>
+    <string name="sc_platforms_title">🌍 المنصات المتاحة (14)</string>
+    <string name="sc_platforms_hint">اضغط على أي منصة لاختيارها يدوياً — أو فعّل الاختيار الذكي</string>
+<string name="mode_github">🚀 رفع إلى GitHub</string>
     <string name="mode_direct">⚡ رابط مباشر</string>
     <string name="share_center_title">⚡ مركز الرفع</string>
     <string name="share_center_subtitle">روابط مباشرة في ثوانٍ — أو ارفع إلى مستودعك على GitHub</string>

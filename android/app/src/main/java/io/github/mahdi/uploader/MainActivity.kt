@@ -402,7 +402,8 @@ class MainActivity : AppCompatActivity() {
                     btn.animate().scaleX(1f).scaleY(1f).setDuration(150L)
                         .setInterpolator(android.view.animation.OvershootInterpolator(2.4f)).start()
                 }.start()
-            showShareSheet()
+            // ⚡ مركز الرفع المباشر — واجهة كاملة بأسلوب raf3ly مع 14 منصة
+            startActivity(android.content.Intent(this, ShareCenterActivity::class.java))
         }
         btnLogout.setOnClickListener {
             Store.setToken(this, "")
@@ -704,6 +705,20 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (api != null) maybeCheckUpdateOnResume()
+        // 🔁 استقبال تبديل من مركز الرفع المباشر → افتح ورقة الرفع إلى GitHub
+        if (ShareBridge.pendingGithubUpload) {
+            ShareBridge.pendingGithubUpload = false
+            if (api != null) {
+                repos.firstOrNull()?.let { openUploadSheet(it) }
+                    ?: run {
+                        Toast.makeText(this, getString(R.string.need_repo_for_github),
+                            Toast.LENGTH_LONG).show()
+                    }
+            } else {
+                Toast.makeText(this, getString(R.string.need_repo_for_github),
+                    Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun maybeCheckUpdateOnResume() {
@@ -1743,7 +1758,7 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<MaterialButton>(R.id.btnModeDirect).setOnClickListener {
             haptic()
             dialog.dismiss()
-            showShareSheet()
+            startActivity(android.content.Intent(this, ShareCenterActivity::class.java))
         }
 
         val repoInput = view.findViewById<EditText>(R.id.uploadRepoInput)
