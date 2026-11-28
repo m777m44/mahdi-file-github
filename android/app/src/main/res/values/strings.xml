@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GitHub Uploader</string>
+
+    <!-- Login -->
+    <string name="login_title">الرفع إلى حسابك على GitHub</string>
+    <string name="login_subtitle">تسجيل دخول رسمي عبر GitHub — ارفع أي ملفات 📄 أو مجلدات 📂 أو أرشيف zip 🗜 إلى مستودعاتك من هاتفك</string>
+    <string name="btn_login_github">🔐 تسجيل الدخول عبر GitHub</string>
+    <string name="or">— أو —</string>
+    <string name="pat_hint">الصق Personal Access Token هنا</string>
+    <string name="btn_login_pat">دخول بالتوكن</string>
+    <string name="device_code_title">أدخل هذا الرمز في المتصفح</string>
+    <string name="btn_open_browser">افتح github.com/login/device</string>
+    <string name="enter_code_at">انتظر… بعد إدخال الرمز في المتصفح سيتم الدخول تلقائياً</string>
+    <string name="requesting_code">جارٍ طلب الرمز من GitHub…</string>
+    <string name="checking_token">جارٍ التحقق من التوكن…</string>
+    <string name="login_failed">فشل تسجيل الدخول:</string>
+    <string name="welcome">مرحباً %1$s 👋</string>
+    <string name="enter_pat">الصق التوكن أولاً</string>
+
+    <!-- Settings -->
+    <string name="settings_title">الإعداد — Client ID</string>
+    <string name="settings_hint">للدخول عبر GitHub: أنشئ OAuth App من حسابك (Settings ← Developer settings ← OAuth Apps) بدون callback، وظعّل خيار Enable Device Flow، ثم الصق Client ID هنا.</string>
+    <string name="client_id_hint">Client ID</string>
+    <string name="save">حفظ</string>
+
+    <!-- Main -->
+    <string name="your_repos">مستودعاتك ومشاريعك</string>
+    <string name="search_hint">🔍 ابحث باسم المستودع…</string>
+    <string name="btn_create_repo">➕ مستودع جديد</string>
+    <string name="load_failed">تعذر تحميل المستودعات:</string>
+    <string name="no_repos">لا توجد مستودعات بعد</string>
+
+    <!-- Create repo -->
+    <string name="create_repo_title">إنشاء مستودع جديد</string>
+    <string name="repo_name_hint">اسم المستودع بالإنجليزية مثل my-project</string>
+    <string name="repo_desc_hint">وصف (اختياري)</string>
+    <string name="repo_private">مستودع خاص 🔒</string>
+    <string name="create">إنشاء</string>
+    <string name="repo_created">تم إنشاء: %1$s ✅</string>
+    <string name="repo_create_failed">فشل إنشاء المستودع:</string>
+
+    <!-- Upload sheet -->
+            <string name="sc_switch_github">🔼 التبديل إلى رفع GitHub 📂</string>
+    <string name="sc_close">إغلاق</string>
+    <string name="sc_title">⚡ مركز الرفع المباشر</string>
+    <string name="sc_subtitle">روابط مباشرة في ثوانٍ — 14 منصة مجهولة جاهزة للعمل</string>
+    <string name="sc_auto_title">🤖 الاختيار الذكي التلقائي</string>
+    <string name="sc_auto_desc">يتعرف على نوع الملف (صورة/فيديو/صوت/أرشيف) ويختار المنصة الأنسب + بدائل تلقائية عند الفشل</string>
+    <string name="sc_pick_files">📁 ملفات</string>
+    <string name="sc_pick_images">🖼️ صور</string>
+    <string name="sc_camera">📷 كاميرا</string>
+    <string name="sc_queue_empty">لم تختر أي ملفات بعد — استخدم الأزرار أعلاه</string>
+    <string name="sc_queue_summary">✅ %1$d ملف — %2$s جاهز للرفع</string>
+    <string name="sc_auto_host">🤖 تلقائي — يختار المنصة الأنسب حسب نوع وحجم كل ملف</string>
+    <string name="sc_start_upload">⚡ ارفع واحصل على روابط مباشرة</string>
+    <string name="sc_uploading">📤 رفع %1$d من %2$d — %3$s</string>
+    <string name="sc_fallback">🔄 جرّب منصة %1$s (المحاولة %2$d)…</string>
+    <string name="sc_all_done">🎉 انتهى — نجح %1$d من %2$d ملف. الروابط أعلاه جاهزة للنسخ والمشاركة</string>
+    <string name="sc_pick_first">اختر ملفاً واحداً على الأقل أولاً</string>
+    <string name="sc_staging">⏳ تجهيز %1$d ملف…</string>
+    <string name="sc_camera_failed">تعذر فتح الكاميرا — جرّب زر الصور</string>
+    <string name="sc_busy">انتظر انتهاء الرفع الحالي</string>
+    <string name="sc_platforms_title">🌍 المنصات المتاحة (14)</string>
+    <string name="sc_filter_all">🌐 الكل</string>
+    <string name="sc_filter_permanent">♾️ دائم</string>
+    <string name="sc_filter_temp">⏳ مؤقت</string>
+    <string name="sc_filter_fast">⚡ سريع</string>
+    <string name="sc_clear_history">🗑️ مسح السجل</string>
+    <string name="sc_history_cleared">تم مسح سجل الروابط ✅</string>
+    <string name="sc_open_failed">⚠️ تعذر فتح مركز الرفع المباشر — جرب مرة أخرى</string>
+    <string name="sc_platforms_hint">اضغط على أي منصة لاختيارها يدوياً — أو فعّل الاختيار الذكي</string>
+<string name="mode_github">🚀 رفع إلى GitHub</string>
+    <string name="mode_direct">⚡ رابط مباشر</string>
+    <string name="share_center_title">⚡ مركز الرفع</string>
+    <string name="share_center_subtitle">روابط مباشرة في ثوانٍ — أو ارفع إلى مستودعك على GitHub</string>
+    <string name="need_repo_for_github">سجّل الدخول أولاً لرفع الملفات إلى GitHub</string>
+<string name="upload_title">⬆ رفع ملفات إلى مستودع</string>
+    <string name="upload_repo_hint">المستودع owner/name</string>
+    <string name="branch_label">الفرع Branch (فارغ = الافتراضي)</string>
+    <string name="branch_hint_custom">مثال: main أو feature/new</string>
+    <string name="prefix_label">مجلد داخل المستودع (اختياري)</string>
+    <string name="prefix_hint">مثل docs أو projects/app</string>
+    <string name="message_label">رسالة الالتزام (اختياري)</string>
+    <string name="btn_pick_files">📄 ملفات</string>
+    <string name="btn_pick_folder">📂 مجلد كامل</string>
+    <string name="btn_pick_zip">🗜 ملف zip</string>
+    <string name="zip_extract">فك الضغط ورفع المحتويات</string>
+    <string name="zip_asis">رفع ملف الـ zip كما هو</string>
+    <string name="zip_modes_label">محتوى الـ zip:</string>
+    <string name="btn_upload">⬆ ارفع الآن</string>
+    <string name="nothing_picked">لم تختر أي ملفات بعد — استخدم الأزرار أعلاه</string>
+    <string name="picked_summary">%1$d عنصر محدد:\n%2$s\nالمجموع: %3$s</string>
+    <string name="pick_repo_first">اختر أو اكتب اسم المستودع أولاً</string>
+    <string name="pick_files_first">لم يتم اختيار أي ملفات 📂</string>
+    <string name="uploading_current">جارٍ: %1$s</string>
+    <string name="upload_done">✅ تم رفع %1$d ملف إلى %2$s (الفرع: %3$s)</string>
+    <string name="commits_count">عدد الالتزامات: %1$d</string>
+    <string name="failed_files">⚠ فشل رفع %1$d ملف:</string>
+    <string name="upload_result_title">نتيجة الرفع</string>
+    <string name="upload_failed_title">فشل الرفع</string>
+    <string name="open_repo">افتتح المستودع في المتصفح</string>
+    <string name="close">إغلاق</string>
+    <string name="btn_pick_upload">اختيار للرفع ⬆</string>
+    <string name="default_branch_hint">الفرع الافتراضي: %1$s</string>
+    <string name="badge_public">🌍 عام</string>
+    <string name="badge_private">🔒 خاص</string>
+    <string name="no_desc">بدون وصف</string>
+    <string name="cannot_read_file">تعذر نسخ الملف: %1$s</string>
+    <string name="picked_summary_short">تم تجهيز %1$d عنصر — المجموع: %2$s\n</string>
+    <string name="more_files">…و %1$d ملفاً آخر</string>
+    <string name="stage_errors">⚠ فشل تجهيز %1$d ملف:</string>
+    <string name="repo_meta">الفرع: %1$s  •  آخر تحديث: %2$s</string>
+    <string name="advanced_options">خيارات متقدمة (اختياري)</string>
+    <string name="branch_optional_hint">اختياري</string>
+    <string name="prefix_optional_hint">المجلد الفرعي داخل المستودع</string>
+    <string name="message_optional_hint">رسالة الالتزام (Commit)</string>
+    <string name="empty_or_unreadable">الملف فارغ أو لا يمكن قراءته: %1$s</string>
+    <string name="btn_pick_url">🌐 رفع من رابط مباشر (من الإنترنت)</string>
+    <string name="url_dialog_title">رفع ملف من رابط</string>
+    <string name="url_dialog_hint">الصق رابط الملف المباشر (مثال: https://files.catbox.moe/1zs3xv.zip) وسيحمّله التطبيق ثم يرفعه إلى المستودع — اعتذر عن فشل القراءة للملفات المؤقتة، يمكنك أيضاً نسخ الملف إلى تطبيق الملفات ثم اختياره.</string>
+    <string name="url_dialog_field">https:// …</string>
+    <string name="btn_download">⬇ تحميل وتجهيز للرفع</string>
+    <string name="url_invalid">الصق رابطاً صحيحاً يبدأ بـ http أو https</string>
+    <string name="downloading">جارٍ تحميل الملف من الرابط…</string>
+    <string name="downloading_progress">جارٍ التحميل: %1$s / %2$s</string>
+    <string name="download_failed_code">فشل تحميل الملف من الرابط (رمز %1$d)</string>
+    <string name="download_empty">الرابط لم يُرجع بيانات</string>
+    <string name="download_empty_file">الملف المحمّل فارغ: %1$s</string>
+    <string name="download_done_toast">تم تجهيز الملف للرفع: %1$s ✅</string>
+    <string name="download_failed">فشل التحميل من الرابط</string>
+    <string name="stage_retry_hint">💡 حل بديل مؤكد: انسخ الملف إلى تطبيق «الملفات» على هاتفك (مجلد التنزيلات) ثم اختره من هناك، أو استخدم «رفع من رابط».</string>
+
+    <string name="update_sheet_title">✨ تحديث جديد متاح</string>
+    <string name="update_new_version">الإصدار الجديد: %1$s</string>
+    <string name="update_current_version">إصدارك الحالي: %1$s</string>
+    <string name="update_btn_install">⬇ تحديث الآن</string>
+    <string name="update_btn_cancel">إلغاء ✖</string>
+    <string name="update_download_failed">فشل تحميل التحديث: %1$s</string>
+    <string name="update_ready_toast">تم تحميل التحديث ✔ أكمل التثبيت من النافذة التالية</string>
+    <string name="update_downloading">جارٍ تحميل التحديث…</string>
+    <string name="update_percent">جارٍ التحميل: %1$d%% — %2$s من %3$s</string>
+    <string name="update_downloaded">تم التحميل ✔ جاهز للتثبيت</string>
+    <string name="update_btn_do_install">✅ تثبيت الآن</string>
+    <string name="update_need_permission">لإكمال التثبيت اسمح بخيار «تثبيت التطبيقات غير المعروفة» لهذا التطبيق، ثم اضغط تثبيت مرة أخرى</string>
+    <string name="update_download_retrying">تعذر الاتصال — جارٍ إعادة المحاولة…</string>
+    <string name="update_install_failed">تعذر بدء التثبيت — تأكد من صلاحية تثبيت التطبيقات غير المعروفة</string>
+    <string name="btn_suggest_short">اقتراح ✨</string>
+    <string name="btn_suggest_msg">✨ اقتراح رسالة الالتزام تلقائياً</string>
+
+
+    <string name="btn_switch_account">🔄 تبديل الحساب المحفوظ</string>
+    <string name="btn_store_account">💾 حفظ الحساب الحالي في القائمة</string>
+    <string name="switch_account_title">الحسابات المحفوظة</string>
+    <string name="account_saved">تم حفظ الحساب ✅</string>
+    <string name="no_saved_accounts">لا توجد حسابات محفوظة بعد — سجّل دخولك ثم اضغط «حفظ الحساب الحالي»</string>
+    <string name="login_first_toast">سجّل دخول أولاً ثم احفظ الحساب</string>
+    <string name="account_switched">تم التبديل إلى %1$s ✅</string>
+    <string name="repos_empty">لا توجد مستودعات ظاهرة — اسحب الشاشة للتحديث أو أنشئ مستودعاً جديداً ⚡</string>
+
+    <string name="btn_open_log">📊 سجل العمليات والإحصائيات</string>
+    <string name="stat_uploads">عمليات رفع</string>
+    <string name="stat_files">ملف مرفوع</string>
+    <string name="stat_rate">نسبة النجاح</string>
+    <string name="log_title">📈 سجل العمليات</string>
+    <string name="log_clear">🗑 مسح السجل</string>
+    <string name="log_empty">لا توجد عمليات رفع بعد — ابدأ أول رفع وسيظهر هنا</string>
+
+    <string name="copy_report">نسخ التقرير 📋</string>
+    <string name="copied">تم النسخ إلى الحافظة ✅</string>
+    <string name="upload_progress_count">%1$d من %2$s ملف — ⏱ %3$s</string>
+    <string name="chip_repos">مستودعات</string>
+    <string name="hero_uploads_count">إجمالي عمليات الرفع عبر التطبيق: %1$d</string>
+    <string name="share_app">📤 مشاركة التطبيق مع أصدقائك</string>
+    <string name="share_text">⭐ حمّل تطبيق MAHDI FILE GITHUB — ارفع أي ملفات أو مجلدات إلى حساب GitHub من هاتفك مباشرة:\n%1$s</string>
+    <string name="update_auto_installing">جارٍ فتح مثبِّت النظام… اضغط «تثبيت» في النافذة المنبثقة</string>
+    <string name="sort_newest">⇅ الأحدث</string>
+    <string name="sort_az">⇅ أبجدي (أ→ي)</string>
+    <string name="preview_btn">👁 معاينة وتعديل الملفات</string>
+    <string name="preview_title">معاينة الملفات المختارة</string>
+    <string name="preview_hint">انقر على ملف لاستبعاده • اضغط ↺ لإعادته</string>
+    <string name="preview_count">%1$d ملف مختار • %2$s</string>
+    <string name="all_excluded_toast">كل الملفات مستبعدة — أعد ملفاً واحداً على الأقل</string>
+    <string name="excluded_note">🚫 مستبعد: %1$d ملف</string>
+    <string name="adv_title">⚙️ الخيارات المتقدمة</string>
+    <string name="adv_subtitle">كل الحقول اختيارية — اتركها فارغة وسيُعني التطبيق بالباقي بذكاء</string>
+    <string name="branch_helper">على أي فرع تُرفع الملفات — اتركه فارغاً للفرع الرئيسي</string>
+    <string name="prefix_helper">تُوضع الملفات داخل مجلد بهذا الاسم — مثال: docs أو الصور</string>
+    <string name="message_helper">وصف يُظهر مع الملفات في GitHub — أو دع التطبيق يقترحها لك</string>
+    <string name="cannot_create_dir">تعذّر إنشاء مجلد التجهيز: %1$s</string>
+    <string name="stage_copy_failed">فشل نسخ الملف: %1$s — %2$s</string>
+
+
+    <!-- 1.10 — إدارة المستودعات -->
+    <string name="manager_title">⚙️ إدارة المستودع</string>
+    <string name="manager_subtitle">تحكم كامل: تصفح الملفات واحذفها، أو احذف المستودع بالكامل</string>
+    <string name="manager_browse">📂 تصفح الملفات وتحدد للحذف</string>
+    <string name="manager_delete_repo">🗑️ حذف المستودع بالكامل…</string>
+    <string name="manager_delete_scope">⚠️ حذف المستودع نهائي ولا يمكن التراجع — يتطلب توكن بصلاحية delete_repo (اضغط ضغطة طويلة على أي مستودع لفتح هذه اللوحة)</string>
+    <string name="browser_title">📂 تصفح الملفات</string>
+    <string name="browser_subtitle">اضغط على أي صف للتحديد أو الإلغاء — تحديد مجلد يحدد كل ما بداخله</string>
+    <string name="browser_none_selected">لم يُحدَّد شيء — %1$s مسار</string>
+    <string name="browser_selected">من المحدد للحذف: %1$d مسار</string>
+    <string name="browser_delete_selected">🗑️ حذف المحدد (%1$d)</string>
+    <string name="browser_select_all">☑️ تحديد الكل</string>
+    <string name="browser_loading">جارٍ تحميل ملفات المستودع…</string>
+    <string name="repo_meta_num">مجلد — %1$d ملف</string>
+    <string name="browser_empty">المستودع فارغ — لا يوجد ملفات</string>
+    <string name="browser_confirm_title">تأكيد الحذف النهائي</string>
+    <string name="browser_confirm_msg">سيتم حذف %1$d مسار نهائياً من المستودع %2$s (يُسجَّل كالتزام واحد).
+لا يمكن التراجع — هل أنت متأكد؟</string>
+    <string name="browser_deleted">تم حذف %1$d مسار ✅</string>
+    <string name="delete_repo_confirm_title">حذف المستودع نهائياً؟</string>
+    <string name="delete_repo_confirm_msg">سيُحذف المستودع «%1$s» مع كل ملفاته وسجله نهائياً من GitHub.
+خطوة خطيرة ولا يمكن التراجع عنها بأي شكل.</string>
+    <string name="delete_repo_confirm_btn">نعم، احذف نهائياً</string>
+    <string name="delete_repo_done">تم حذف المستودع %1$s</string>
+    <string name="delete_failed">فشل الحذف:</string>
+
+    <!-- 1.10 — المشاركة السريعة (من سكربت raf3ly) -->
+    <string name="share_short_btn">⚡ مشاركة — رابط مباشر</string>
+    <string name="share_top_hint">ارفع برابط مباشر وبدون تسجيل دخول — أو عبر GitHub بخيارات الرفع أدناه</string>
+    <string name="share_login_btn">⚡ مشاركة سريعة برابط مباشر — بدون تسجيل دخول</string>
+    <string name="share_title">⚡ مشاركة سريعة برابط مباشر</string>
+    <string name="share_subtitle">ارفع أي ملف إلى منصة مشاركة واحصل على رابط مباشر فوراً — منقول من سكربت raf3ly</string>
+    <string name="share_pick_files">اختر الملفات (يمكن أكثر من ملف)</string>
+    <string name="share_btn_pick">📁 اختر ملفات</string>
+    <string name="share_no_files">لم تختر ملفات بعد</string>
+    <string name="share_files_summary">الملفات المختارة: %1$s</string>
+    <string name="share_host_hint">منصة الرفع</string>
+    <string name="share_btn_start">⚡ ارفع واحصل على الرابط</string>
+    <string name="share_sending">جارٍ الرفع إلى %1$s…</string>
+    <string name="share_percent">%1$d%% — %2$s من %3$s</string>
+    <string name="share_done_item">✅ %1$s — %2$s</string>
+    <string name="share_btn_copy">نسخ الرابط</string>
+    <string name="share_btn_send">مشاركة</string>
+    <string name="share_open">فتح</string>
+    <string name="share_copied">تم نسخ الرابط ✅</string>
+    <string name="share_all_done">اكتمل الرفع — %1$d ناجح من %2$d</string>
+    <string name="share_pick_first">اختر ملفاً واحداً على الأقل</string>
+</resources>

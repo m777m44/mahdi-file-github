@@ -1,0 +1,2081 @@
+package io.github.mahdi.uploader
+
+import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.provider.OpenableColumns
+import android.text.Editable
+import android.text.TextWatcher
+import android.text.format.Formatter
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.ProgressBar
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.isVisible
+import androidx.documentfile.provider.DocumentFile
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.progressindicator.LinearProgressIndicator
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Locale
+
+class MainActivity : AppCompatActivity() {
+
+    override fun attachBaseContext(newBase: Context) {
+        val config = android.content.res.Configuration(newBase.resources.configuration)
+        config.setLocale(java.util.Locale("ar"))
+        super.attachBaseContext(newBase.createConfigurationContext(config))
+    }
+
+    private val scope = CoroutineScope(Dispatchers.Main + Job())
+
+    private var api: GitHubClient? = null
+    private var repos: MutableList<org.json.JSONObject> = mutableListOf()
+    private var adapter: RepoAdapter? = null
+
+    private lateinit var loginSection: View
+    private lateinit var deviceCodeCard: View
+    private lateinit var userCodeText: TextView
+    private lateinit var loginStatus: TextView
+    private lateinit var patInput: EditText
+    private lateinit var btnOpenBrowser: MaterialButton
+    private lateinit var btnLoginGitHub: MaterialButton
+    private lateinit var btnPatLogin: MaterialButton
+
+    private lateinit var headerLogin: TextView
+    private lateinit var btnSettings: ImageButton
+    private lateinit var btnLogout: ImageButton
+    private lateinit var repoSearch: EditText
+    private lateinit var reposList: RecyclerView
+    private lateinit var reposProgress: ProgressBar
+    private lateinit var fabCreateRepo: com.google.android.material.floatingactionbutton.FloatingActionButton
+    private lateinit var swipeRepos: androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+    private lateinit var emptyRepos: TextView
+
+    private var uploadSheet: BottomSheetDialog? = null
+    private var stagingDir: File? = null
+
+    private enum class Kind { FILE, FOLDER, ZIP }
+
+    private data class Pending(
+        val stagedFile: File,
+        val kind: Kind,
+        val relPath: String,
+        val size: Long,
+    )
+
+    private var pendingDocs = mutableListOf<Pending>()
+    private var zipAsIs = false
+    private var pickErrors = mutableListOf<Pair<String, String>>()
+    private var repoSortNewest = true
+    private val excludedDocs = mutableSetOf<String>()
+    private val shareFiles = mutableListOf<Pending>()
+
+    private fun newStagingDir(): File {
+        stagingDir?.deleteRecursively()
+        val dir = File(cacheDir, "upload_staging_${System.currentTimeMillis()}").apply { mkdirs() }
+        stagingDir = dir
+        return dir
+    }
+
+    private fun persistPermission(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Copy a picked document into app-private storage immediately so uploads
+        never depend on the original provider being reachable later. */
+    private fun stageDocument(uri: Uri, relPath: String): File {
+        val dir = stagingDir ?: newStagingDir()
+        val safe = UploadEngine.stableName(relPath)
+        val ext = if (safe.substringAfterLast('.', "").isEmpty()) "bin" else safe.substringAfterLast(".")
+        val stem = safe.substringBeforeLast('.', safe)
+        var target = File(dir, safe)
+        var n = 1
+        while (target.exists()) {
+            target = File(dir, stem + "_" + n + "." + ext)
+            n++
+        }
+        // إنشاء كل المجلدات الوسيطة قبل الكتابة (سبب خطأ ENOENT مع المجلدات الفرعية)
+        target.parentFile?.let { parent ->
+            if (!parent.exists() && !parent.mkdirs() && !parent.isDirectory) {
+                throw Exception(getString(R.string.cannot_create_dir, parent.name))
+            }
+        }
+        for (mkAttempt in 0 until 3) {
+            val input = openReadably(uri)
+            try {
+                input.use { stream ->
+                    target.outputStream().use { output -> stream.copyTo(output) }
+                }
+                break
+            } catch (e: java.io.IOException) {
+                if (mkAttempt == 2) throw Exception(
+                    getString(R.string.stage_copy_failed, relPath, e.message ?: "")
+                )
+                // قد يكون الملف تالفً مؤقتاً — إعادة محاولة بعد مهلة قصيرة
+                try { target.delete() } catch (_: Exception) {}
+                Thread.sleep(600L * (mkAttempt + 1))
+            }
+        }
+        if (target.length() == 0L) {
+            target.delete()
+            throw Exception(getString(R.string.empty_or_unreadable, relPath))
+        }
+        return target
+    }
+
+
+    /** Tries several reading strategies with retries: a plain stream, a file
+        descriptor, and (last resort) the raw path reported by the provider,
+        so flaky providers or freshly moved files do not break staging. */
+    private fun openReadably(uri: Uri): java.io.InputStream {
+        var lastError: Exception? = null
+        repeat(3) { attempt ->
+            try {
+                contentResolver.openInputStream(uri)?.let { return it }
+            } catch (e: Exception) {
+                lastError = e
+            } catch (t: Throwable) {
+                lastError = Exception(t.message, t)
+            }
+            try {
+                val pfd = contentResolver.openFileDescriptor(uri, "r")
+                if (pfd != null) {
+                    return android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd)
+                }
+            } catch (e: Exception) {
+                lastError = e
+            } catch (t: Throwable) {
+                lastError = Exception(t.message, t)
+            }
+            try {
+                contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    val dataIdx = c.getColumnIndex("_data")
+                    if (dataIdx >= 0 && c.moveToFirst()) {
+                        val path = c.getString(dataIdx)
+                        if (!path.isNullOrBlank() && android.os.Build.VERSION.SDK_INT < 30) {
+                            val f = File(path)
+                            if (f.exists() && f.canRead()) return f.inputStream()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                lastError = e
+            }
+            Thread.sleep(400L * (attempt + 1))
+        }
+        throw Exception(getString(R.string.cannot_read_file, lastError?.message ?: uri.toString()))
+    }
+
+    private fun displayName(uri: Uri): String {
+        try {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && cursor.moveToFirst()) {
+                    val name = cursor.getString(idx)
+                    if (!name.isNullOrBlank()) return name
+                }
+            }
+        } catch (_: Exception) {
+        }
+        return uri.lastPathSegment ?: "file"
+    }
+
+    // ------------------------------------------------------------ launchers
+
+    private val pickFiles = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNullOrEmpty()) return@registerForActivityResult
+        scope.launch {
+            val errors = mutableListOf<Pair<String, String>>()
+            val staged = mutableListOf<Pending>()
+            withContext(Dispatchers.IO) {
+                for (uri in uris) {
+                    persistPermission(uri)
+                    val name = displayName(uri)
+                    try {
+                        val file = stageDocument(uri, name)
+                        synchronized(staged) {
+                            staged.add(Pending(file, Kind.FILE, name, file.length()))
+                        }
+                    } catch (e: Exception) {
+                        errors.add(name to (e.message ?: "تعذر النسخ"))
+                    }
+                }
+            }
+            pendingDocs.removeAll { it.kind == Kind.FILE }
+            pendingDocs.addAll(staged)
+            pickErrors = errors
+            refreshPickedSummary()
+        }
+    }
+
+    private val pickFolder = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        persistPermission(uri)
+        scope.launch {
+            val errors = mutableListOf<Pair<String, String>>()
+            val staged = mutableListOf<Pending>()
+            withContext(Dispatchers.IO) {
+                val root = DocumentFile.fromTreeUri(this@MainActivity, uri)
+                    ?: return@withContext
+                val rootName = root.name ?: ""
+                for (child in root.listFiles()) {
+                    val childName = child.name ?: continue
+                    val path = "${rootName}/${childName}"
+                    if (child.isDirectory) {
+                        walkAndStage(child, path, dirStaging(), staged, errors)
+                    } else {
+                        try {
+                            val file = stageDocument(child.uri, path)
+                            synchronized(staged) {
+                                staged.add(Pending(file, Kind.FILE, path, file.length()))
+                            }
+                        } catch (e: Exception) {
+                            errors.add(path to (e.message ?: "تعذر النسخ"))
+                        }
+                    }
+                }
+            }
+            pendingDocs.removeAll { it.relPath.contains('/') || it.kind == Kind.ZIP }
+            pendingDocs.addAll(staged)
+            pickErrors = errors
+            refreshPickedSummary()
+        }
+    }
+
+    // 1.10: مُطلِق اختيار ملفات المشاركة السريعة — مسجَّل مرة واحدة على مستوى النشاط
+    private var sharePickCb: ((List<Uri>) -> Unit)? = null
+
+    private val sharePick = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        val cb = sharePickCb
+        if (cb != null && uris != null) cb(uris)
+    }
+
+    private val pickZip = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNullOrEmpty()) return@registerForActivityResult
+        scope.launch {
+            val errors = mutableListOf<Pair<String, String>>()
+            val staged = mutableListOf<Pending>()
+            withContext(Dispatchers.IO) {
+                for (uri in uris) {
+                    persistPermission(uri)
+                    val name = displayName(uri)
+                    try {
+                        val file = stageDocument(uri, name)
+                        synchronized(staged) {
+                            staged.add(Pending(file, Kind.ZIP, name, file.length()))
+                        }
+                    } catch (e: Exception) {
+                        errors.add(name to (e.message ?: "تعذر النسخ"))
+                    }
+                }
+            }
+            pendingDocs.removeAll { it.kind == Kind.ZIP }
+            pendingDocs.addAll(staged)
+            pickErrors = errors
+            refreshPickedSummary()
+        }
+    }
+
+    private fun dirStaging(): File = stagingDir ?: newStagingDir()
+
+    private fun walkAndStage(
+        dir: DocumentFile,
+        prefix: String,
+        staging: File,
+        out: MutableList<Pending>,
+        errors: MutableList<Pair<String, String>>,
+    ) {
+        for (child in dir.listFiles()) {
+            val name = child.name ?: continue
+            val path = "${prefix}/${name}"
+            if (child.isDirectory) {
+                walkAndStage(child, path, staging, out, errors)
+            } else {
+                try {
+                    val file = stageDocument(child.uri, path)
+                    synchronized(out) {
+                        out.add(Pending(file, Kind.FILE, path, file.length()))
+                    }
+                } catch (e: Exception) {
+                    errors.add(path to (e.message ?: "تعذر النسخ"))
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ lifecycle
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        bindViews()
+        setupListeners()
+        wireSortButton()
+
+        val token = Store.token(this)
+        if (token.isNotEmpty()) {
+            api = GitHubClient(token)
+            showMain()
+            loadRepos()
+            checkForUpdate()
+        } else {
+            showLogin()
+        }
+    }
+
+    private fun bindViews() {
+        loginSection = findViewById(R.id.loginSection)
+        deviceCodeCard = findViewById(R.id.deviceCodeCard)
+        userCodeText = findViewById(R.id.userCodeText)
+        loginStatus = findViewById(R.id.loginStatus)
+        patInput = findViewById(R.id.patInput)
+        btnOpenBrowser = findViewById(R.id.btnOpenBrowser)
+        btnLoginGitHub = findViewById(R.id.btnLoginGitHub)
+        btnPatLogin = findViewById(R.id.btnPatLogin)
+        headerLogin = findViewById(R.id.headerLogin)
+        btnSettings = findViewById(R.id.btnSettings)
+        btnLogout = findViewById(R.id.btnLogout)
+        repoSearch = findViewById(R.id.repoSearch)
+        reposList = findViewById(R.id.reposList)
+        reposProgress = findViewById(R.id.reposProgress)
+        fabCreateRepo = findViewById(R.id.fabCreateRepo)
+        swipeRepos = findViewById(R.id.swipeRepos)
+        emptyRepos = findViewById(R.id.emptyRepos)
+    }
+
+    private fun setupListeners() {
+        btnLoginGitHub.setOnClickListener { startDeviceFlow() }
+        btnOpenBrowser.setOnClickListener {
+            val url = btnOpenBrowser.tag as? String
+            if (url != null) startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }
+        btnPatLogin.setOnClickListener { loginWithPat() }
+        btnSettings.setOnClickListener { showSettingsDialog() }
+        findViewById<ImageButton>(R.id.btnShareQuick).setOnClickListener { btn ->
+            haptic()
+            // نبضة نقر أنيقة على الزر الدائري
+            btn.animate().scaleX(0.85f).scaleY(0.85f).setDuration(70L)
+                .withEndAction {
+                    btn.animate().scaleX(1f).scaleY(1f).setDuration(150L)
+                        .setInterpolator(android.view.animation.OvershootInterpolator(2.4f)).start()
+                }.start()
+            // ⚡ مركز الرفع المباشر — واجهة كاملة بأسلوب raf3ly مع 14 منصة
+            openShareCenterSafely()
+        }
+        btnLogout.setOnClickListener {
+            Store.setToken(this, "")
+            api = null
+            repos.clear()
+            showLogin()
+        }
+        repoSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                adapter?.filter(s?.toString().orEmpty())
+            }
+        })
+        fabCreateRepo.setOnClickListener { showCreateRepoDialog() }
+
+        swipeRepos.setColorSchemeColors(getColor(R.color.accent_bright))
+        swipeRepos.setProgressBackgroundColorSchemeColor(getColor(R.color.card))
+        swipeRepos.setOnRefreshListener {
+            haptic()
+            loadRepos()
+        }
+        reposList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                val lm = rv.layoutManager as? LinearLayoutManager ?: return
+                val first = lm.findFirstCompletelyVisibleItemPosition()
+                if (dy > 8 && first > 0) fabCreateRepo.hide()
+                else if (dy < -8 || first <= 0) fabCreateRepo.show()
+            }
+        })
+    }
+
+    private fun haptic(long: Boolean = false) {
+        try {
+            val v = getSystemService(Vibrator::class.java) ?: return
+            if (v.hasVibrator()) {
+                v.vibrate(
+                    VibrationEffect.createOneShot(
+                        if (long) 60L else 20L,
+                        if (long) VibrationEffect.DEFAULT_AMPLITUDE else 120,
+                    )
+                )
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    // ------------------------------------------------------------ login
+
+    private fun showLogin() {
+        loginSection.isVisible = true
+        mainSectionHidden()
+        deviceCodeCard.isVisible = false
+        loginStatus.text = ""
+        loginSection.alpha = 0f
+        loginSection.animate().alpha(1f).setDuration(320).start()
+        startLogoPulse()
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE,
+        )
+    }
+
+    private fun mainSectionHidden() {
+        findViewById<View>(R.id.mainSection).isVisible = false
+    }
+
+    private fun showMain() {
+        loginSection.isVisible = false
+        val main = findViewById<View>(R.id.mainSection)
+        main.isVisible = true
+        main.alpha = 0f
+        main.translationY = 28f
+        main.animate().alpha(1f).translationY(0f).setDuration(300)
+            .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).start()
+        headerLogin.text = Store.login(this).ifEmpty { getString(R.string.app_name) }
+        findViewById<android.widget.ImageView>(R.id.loginLogo).animate().cancel()
+        findViewById<android.widget.ImageView>(R.id.loginLogo).scaleX = 1f
+        findViewById<android.widget.ImageView>(R.id.loginLogo).scaleY = 1f
+        refreshHero()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    private fun startLogoPulse() {
+        val logo = findViewById<android.widget.ImageView>(R.id.loginLogo)
+        val anim = android.view.animation.ScaleAnimation(
+            1f, 1.07f, 1f, 1.07f,
+            android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
+            android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
+        ).apply {
+            duration = 1400
+            repeatMode = android.view.animation.Animation.REVERSE
+            repeatCount = android.view.animation.Animation.INFINITE
+            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+        }
+        logo.startAnimation(anim)
+    }
+
+    private fun animateCount(tv: TextView, target: Int, suffix: String = "") {
+        val start = tv.text.toString().filter { ch -> ch.isDigit() }.toIntOrNull() ?: 0
+        val anim = android.animation.ValueAnimator.ofInt(start, target)
+        anim.duration = 700
+        anim.addUpdateListener { tv.text = "${it.animatedValue}$suffix" }
+        anim.start()
+    }
+
+    private fun refreshHero() {
+        val login = Store.login(this).ifEmpty { "GitHub" }
+        findViewById<TextView>(R.id.avatarText).text = login.take(1).uppercase()
+        findViewById<TextView>(R.id.heroName).text = login
+        val (uploads, files, rate) = ActivityLog.stats(this)
+        animateCount(findViewById(R.id.chipReposVal), repos.size)
+        animateCount(findViewById(R.id.chipUploadsVal), files)
+        animateCount(findViewById(R.id.chipRateVal), rate, "%")
+        findViewById<TextView>(R.id.heroSub).text =
+            getString(R.string.hero_uploads_count, uploads)
+    }
+
+    private fun ensureClientId(then: (String) -> Unit) {
+        val existing = Store.clientId(this)
+        if (existing.isNotEmpty()) {
+            then(existing)
+            return
+        }
+        showSettingsDialog { then(it) }
+    }
+
+    private fun showSettingsDialog(onSaved: (String) -> Unit = {}) {
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_settings, null)
+        val input = view.findViewById<EditText>(R.id.clientIdInput)
+        input.setText(Store.clientId(this))
+        val dlg = MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.settings_title))
+            .setView(view)
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
+                val id = input.text.toString().trim()
+                if (id.isNotEmpty()) {
+                    Store.setClientId(this, id)
+                    onSaved(id)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+
+        view.findViewById<MaterialButton>(R.id.btnShareApp).setOnClickListener {
+            val send = Intent(Intent.ACTION_SEND)
+            send.type = "text/plain"
+            send.putExtra(
+                Intent.EXTRA_TEXT,
+                getString(R.string.share_text, "https://github.com/m777m44/mahdi-file-github"),
+            )
+            startActivity(Intent.createChooser(send, getString(R.string.share_app)))
+        }
+        view.findViewById<MaterialButton>(R.id.btnOpenLog).setOnClickListener {
+            ActivityLogDialog.show(this@MainActivity)
+            dlg.dismiss()
+        }
+        view.findViewById<MaterialButton>(R.id.btnStoreAccount).setOnClickListener {
+            val tkn = Store.token(this)
+            val login = Store.login(this)
+            if (tkn.isEmpty()) {
+                Toast.makeText(this, getString(R.string.login_first_toast), Toast.LENGTH_SHORT).show()
+            } else {
+                Store.addAccount(this, login, tkn)
+                Toast.makeText(this, getString(R.string.account_saved), Toast.LENGTH_SHORT).show()
+            }
+        }
+        view.findViewById<MaterialButton>(R.id.btnSwitchAccount).setOnClickListener {
+            val saved = Store.accounts(this)
+            if (saved.isEmpty()) {
+                Toast.makeText(this, getString(R.string.no_saved_accounts), Toast.LENGTH_SHORT).show()
+            } else {
+                val names = saved.map { it.first }.toTypedArray()
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setTitle(getString(R.string.switch_account_title))
+                    .setItems(names) { _, which ->
+                        val (login, tkn) = saved[which]
+                        Store.setToken(this@MainActivity, tkn)
+                        Store.setLogin(this@MainActivity, login)
+                        api = GitHubClient(tkn)
+                        showMain()
+                        loadRepos()
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.account_switched, login),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        dlg.dismiss()
+                    }
+                    .setNegativeButton(getString(R.string.close), null)
+                    .show()
+            }
+        }
+    }
+
+    private fun loginWithPat() {
+        val token = patInput.text.toString().trim()
+        if (token.isEmpty()) {
+            Toast.makeText(this, getString(R.string.enter_pat), Toast.LENGTH_SHORT).show()
+            return
+        }
+        loginStatus.text = getString(R.string.checking_token)
+        scope.launch {
+            try {
+                val client = GitHubClient(token)
+                val user = withContext(Dispatchers.IO) { client.getUser() }
+                Store.setToken(this@MainActivity, token)
+                Store.setLogin(this@MainActivity, user.optString("login"))
+                Store.addAccount(this@MainActivity, user.optString("login"), token)
+                api = client
+                Toast.makeText(this@MainActivity,
+                    getString(R.string.welcome, user.optString("login")),
+                    Toast.LENGTH_SHORT).show()
+                showMain()
+                loadRepos()
+                checkForUpdate()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                loginStatus.text = getString(R.string.login_failed, e.message ?: "")
+            }
+        }
+    }
+
+    private fun startDeviceFlow() {
+        ensureClientId { clientId ->
+            scope.launch {
+                try {
+                    loginStatus.text = getString(R.string.requesting_code)
+                    val code = withContext(Dispatchers.IO) {
+                        (api ?: GitHubClient("")).requestDeviceCode(clientId)
+                    }
+                    val userCode = code.getString("user_code")
+                    val uri = code.getString("verification_uri")
+                    val interval = code.optInt("interval", 5).coerceAtLeast(3)
+                    deviceCodeCard.isVisible = true
+                    userCodeText.text = userCode
+                    btnOpenBrowser.tag = uri
+                    loginStatus.text = getString(R.string.enter_code_at)
+                    pollDeviceFlow(clientId, code.getString("device_code"), interval)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    loginStatus.text = getString(R.string.login_failed, e.message ?: "")
+                }
+            }
+        }
+    }
+
+    private fun pollDeviceFlow(clientId: String, deviceCode: String, interval: Int) {
+        scope.launch {
+            var currentInterval = interval
+            while (isActive) {
+                delay(currentInterval * 1000L)
+                try {
+                    val result = withContext(Dispatchers.IO) {
+                        GitHubClient("").pollForToken(clientId, deviceCode)
+                    }
+                    val token = result.optString("access_token")
+                    val error = result.optString("error")
+                    when {
+                        token.isNotEmpty() -> {
+                            val client = GitHubClient(token)
+                            val user = withContext(Dispatchers.IO) { client.getUser() }
+                            Store.setToken(this@MainActivity, token)
+                            Store.setLogin(this@MainActivity, user.optString("login"))
+                            Store.addAccount(this@MainActivity, user.optString("login"), token)
+                            api = client
+                            Toast.makeText(this@MainActivity,
+                                getString(R.string.welcome, user.optString("login")),
+                                Toast.LENGTH_SHORT).show()
+                            showMain()
+                            loadRepos()
+                            checkForUpdate()
+                            return@launch
+                        }
+                        error == "authorization_pending" -> continue
+                        error == "slow_down" -> { currentInterval += 5; continue }
+                        else -> {
+                            loginStatus.text = getString(
+                                R.string.login_failed,
+                                result.optString("error_description", error),
+                            )
+                            return@launch
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    loginStatus.text = getString(R.string.login_failed, e.message ?: "")
+                    return@launch
+                }
+            }
+        }
+    }
+
+    /**
+     * 🛡️ فتح مركز الرفع المباشر بغلاف حماية —
+     * إذا فشل الفتح على أي جهاز لأي سبب تظهر رسالة ودية بدل انهيار التطبيق.
+     */
+    private fun openShareCenterSafely() {
+        try {
+            startActivity(android.content.Intent(this, ShareCenterActivity::class.java))
+        } catch (e: Throwable) {
+            try {
+                Toast.makeText(this, getString(R.string.sc_open_failed), Toast.LENGTH_LONG).show()
+            } catch (_: Throwable) { }
+        }
+    }
+
+    // ------------------------------------------------------------ فحص التحديث عند العودة
+
+    override fun onResume() {
+        super.onResume()
+        if (api != null) maybeCheckUpdateOnResume()
+        // 🔁 استقبال تبديل من مركز الرفع المباشر → افتح ورقة الرفع إلى GitHub
+        if (ShareBridge.pendingGithubUpload) {
+            ShareBridge.pendingGithubUpload = false
+            if (api != null) {
+                repos.firstOrNull()?.let { openUploadSheet(it) }
+                    ?: run {
+                        Toast.makeText(this, getString(R.string.need_repo_for_github),
+                            Toast.LENGTH_LONG).show()
+                    }
+            } else {
+                Toast.makeText(this, getString(R.string.need_repo_for_github),
+                    Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun maybeCheckUpdateOnResume() {
+        try {
+            val prefs = getSharedPreferences("uploader_ui", MODE_PRIVATE)
+            val last = prefs.getLong("last_resume_update_check", 0L)
+            val now = System.currentTimeMillis()
+            if (now - last < 30 * 60 * 1000L) return
+            prefs.edit().putLong("last_resume_update_check", now).apply()
+            checkForUpdate()
+        } catch (_: Exception) {
+        }
+    }
+
+    // ------------------------------------------------------------ repos
+
+    private fun sortRepos() {
+        repos = if (repoSortNewest) {
+            repos.sortedByDescending { it.optString("updated_at") }.toMutableList()
+        } else {
+            repos.sortedBy { it.optString("full_name").lowercase(Locale.US) }.toMutableList()
+        }
+    }
+
+    private fun loadRepos() {
+        val client = api ?: return
+        reposProgress.isVisible = true
+        scope.launch {
+            try {
+                val result = client.listRepos()
+                repos = (0 until result.length()).map { result.getJSONObject(it) }.toMutableList()
+                sortRepos()
+                setupAdapter()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity,
+                    getString(R.string.load_failed, e.message ?: ""),
+                    Toast.LENGTH_LONG).show()
+            } finally {
+                reposProgress.isVisible = false
+                swipeRepos.isRefreshing = false
+            }
+        }
+    }
+
+    private fun setupAdapter() {
+        if (adapter == null) {
+            adapter = RepoAdapter(repos, { repo -> openUploadSheet(repo) }) { repo ->
+                haptic(true)
+                showManageSheet(repo)
+            }
+            reposList.layoutManager = LinearLayoutManager(this)
+            reposList.adapter = adapter
+        } else {
+            adapter!!.replace(repos)
+        }
+        adapter!!.filter(repoSearch.text?.toString().orEmpty())
+        reposList.scheduleLayoutAnimation()
+        emptyRepos.isVisible = repos.isEmpty()
+        refreshHero()
+        if (repos.isNotEmpty()) haptic()
+    }
+
+    private fun showCreateRepoDialog() {
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_create_repo, null)
+        val name = view.findViewById<EditText>(R.id.repoNameInput)
+        val desc = view.findViewById<EditText>(R.id.repoDescInput)
+        val priv = view.findViewById<android.widget.Switch>(R.id.repoPrivateSwitch)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.create_repo_title))
+            .setView(view)
+            .setPositiveButton(getString(R.string.create)) { _, _ ->
+                val repoName = name.text.toString().trim()
+                if (repoName.isEmpty()) return@setPositiveButton
+                createRepo(repoName, priv.isChecked, desc.text.toString().trim())
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun createRepo(name: String, private: Boolean, description: String) {
+        val client = api ?: return
+        reposProgress.isVisible = true
+        scope.launch {
+            try {
+                val repo = withContext(Dispatchers.IO) {
+                    client.createRepo(name, private, description)
+                }
+                Toast.makeText(this@MainActivity,
+                    getString(R.string.repo_created, repo.optString("full_name")),
+                    Toast.LENGTH_SHORT).show()
+                loadRepos()
+                openUploadSheet(repo)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity,
+                    getString(R.string.repo_create_failed, e.message ?: ""),
+                    Toast.LENGTH_LONG).show()
+            } finally {
+                reposProgress.isVisible = false
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ upload
+
+    private fun fileNameFromUrl(url: String): String {
+        val cleaned = url.substringBefore("#").substringBefore("?")
+        val name = cleaned.substringAfterLast('/')
+        return (android.net.Uri.decode(name).ifEmpty { "download" })
+    }
+
+    private fun showUrlDownloadDialog(sheetView: View) {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_upload_url, null)
+        val input = dialogView.findViewById<EditText>(R.id.urlInput)
+        try {
+            val clip = getSystemService(android.content.ClipboardManager::class.java)
+                ?.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
+            if (clip.startsWith("http://") || clip.startsWith("https://")) {
+                input.setText(clip)
+            }
+        } catch (_: Exception) {
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.url_dialog_title))
+            .setView(dialogView)
+            .setPositiveButton(getString(R.string.btn_download)) { _, _ ->
+                val url = input.text.toString().trim()
+                if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                    Toast.makeText(this, getString(R.string.url_invalid), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                downloadFromUrl(url, sheetView)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun downloadFromUrl(url: String, sheetView: View) {
+        val progress = sheetView.findViewById<LinearProgressIndicator>(R.id.uploadProgress)
+        val progressLabel = sheetView.findViewById<TextView>(R.id.progressLabel)
+        val pickBtns = listOf<android.view.View>(
+            sheetView.findViewById(R.id.btnPickFiles),
+            sheetView.findViewById(R.id.btnPickFolder),
+            sheetView.findViewById(R.id.btnPickZip),
+            sheetView.findViewById(R.id.btnPickUrl),
+        )
+        pickBtns.forEach { it.isEnabled = false }
+        progress.isVisible = true
+        progressLabel.text = getString(R.string.downloading)
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val http = GitHubClient.SHARED_HTTP
+                val request = okhttp3.Request.Builder().url(url).build()
+                http.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        throw Exception(getString(R.string.download_failed_code, resp.code))
+                    }
+                    val name = fileNameFromUrl(url)
+                    val mediaType = resp.header("Content-Disposition")
+                    val finalName = mediaType
+                        ?.substringAfterLast('*')
+                        ?.substringAfter("=", "")
+                        ?.trim('"', ' ')
+                        ?.ifEmpty { null }
+                        ?: name
+                    val kind = if (finalName.endsWith(".zip", ignoreCase = true)) Kind.ZIP else Kind.FILE
+                    val target = File(dirStaging(), UploadEngine.stableName(finalName))
+                    val body = resp.body ?: throw Exception(getString(R.string.download_empty))
+                    val total = body.contentLength()
+                    var copied = 0L
+                    body.byteStream().use { input ->
+                        target.outputStream().use { output ->
+                            val buffer = ByteArray(1 shl 17)
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read == -1) break
+                                output.write(buffer, 0, read)
+                                copied += read
+                                if (total > 0 && copied % (4L * 1024 * 1024) < buffer.size.toLong()) {
+                                    runOnUiThread {
+                                        progressLabel.text = getString(
+                                            R.string.downloading_progress,
+                                            Formatter.formatShortFileSize(this@MainActivity, copied),
+                                            Formatter.formatShortFileSize(this@MainActivity, total),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (target.length() == 0L) {
+                        target.delete()
+                        throw Exception(getString(R.string.download_empty_file, finalName))
+                    }
+                    runOnUiThread {
+                        pendingDocs.removeAll { it.kind == Kind.ZIP }
+                        pendingDocs.add(Pending(target, kind, finalName, target.length()))
+                        pickErrors.clear()
+                        refreshPickedSummary()
+                        updateZipRowVisibility(sheetView)
+                        Toast.makeText(this@MainActivity,
+                            getString(R.string.download_done_toast, finalName),
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                runOnUiThread {
+                    pickErrors = mutableListOf(url to (e.message ?: getString(R.string.download_failed)))
+                    refreshPickedSummary()
+                }
+            } finally {
+                runOnUiThread {
+                    pickBtns.forEach { it.isEnabled = true }
+                    progress.isVisible = false
+                    progressLabel.text = ""
+                }
+            }
+        }
+    }
+
+    private fun updateZipRowVisibility(sheetView: View) {
+        sheetView.findViewById<View>(R.id.zipModeRow).isVisible =
+            pendingDocs.any { it.kind == Kind.ZIP }
+    }
+
+    // ------------------------------------------------------------ فرز المستودعات
+
+    private fun wireSortButton() {
+        val btn = findViewById<MaterialButton>(R.id.btnSortRepos) ?: return
+        val prefs = getSharedPreferences("uploader_ui", MODE_PRIVATE)
+        repoSortNewest = prefs.getBoolean("repo_sort_newest", true)
+        btn.text = getString(if (repoSortNewest) R.string.sort_newest else R.string.sort_az)
+        btn.setOnClickListener {
+            repoSortNewest = !repoSortNewest
+            prefs.edit().putBoolean("repo_sort_newest", repoSortNewest).apply()
+            btn.text = getString(if (repoSortNewest) R.string.sort_newest else R.string.sort_az)
+            sortRepos()
+            setupAdapter()
+            haptic()
+        }
+    }
+
+    // ------------------------------------------------------------ معاينة الملفات قبل الرفع
+
+    private fun docKey(doc: Pending): String = doc.stagedFile.absolutePath + "\u0001" + doc.relPath
+
+    private fun showFilesPreviewDialog() {
+        if (pendingDocs.isEmpty()) return
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_files_preview, null)
+        val list = view.findViewById<RecyclerView>(R.id.previewList)
+        val counter = view.findViewById<TextView>(R.id.previewCounter)
+
+        fun updateCounter() {
+            val active = pendingDocs.count { docKey(it) !in excludedDocs }
+            val bytes = pendingDocs.filter { docKey(it) !in excludedDocs }.sumOf { it.size }
+            counter.text = getString(R.string.preview_count, active,
+                Formatter.formatShortFileSize(this, bytes))
+        }
+
+        val previewAdapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val v = LayoutInflater.from(this@MainActivity)
+                    .inflate(R.layout.item_preview_file, parent, false)
+                return object : RecyclerView.ViewHolder(v) {}
+            }
+
+            override fun getItemCount(): Int = pendingDocs.size
+
+            override fun onBindViewHolder(h: RecyclerView.ViewHolder, position: Int) {
+                val doc = pendingDocs[position]
+                val key = docKey(doc)
+                val name = h.itemView.findViewById<TextView>(R.id.previewName)
+                val size = h.itemView.findViewById<TextView>(R.id.previewSize)
+                val toggle = h.itemView.findViewById<TextView>(R.id.previewToggle)
+                val excluded = key in excludedDocs
+                name.text = doc.relPath
+                name.paintFlags = if (excluded)
+                    name.paintFlags or android.graphics.Paint.STRIKE_THRU_TEXT_FLAG
+                else
+                    name.paintFlags and android.graphics.Paint.STRIKE_THRU_TEXT_FLAG.inv()
+                name.alpha = if (excluded) 0.45f else 1f
+                size.text = Formatter.formatShortFileSize(this@MainActivity, doc.size)
+                if (excluded) {
+                    toggle.text = "\u21ba"
+                    toggle.setTextColor(getColor(R.color.accent_bright))
+                } else {
+                    toggle.text = "\u2716"
+                    toggle.setTextColor(getColor(R.color.error))
+                }
+                h.itemView.setOnClickListener {
+                    if (key in excludedDocs) excludedDocs.remove(key) else excludedDocs.add(key)
+                    notifyItemChanged(position)
+                    updateCounter()
+                    refreshPickedSummary()
+                    haptic()
+                }
+            }
+        }
+        list.layoutManager = LinearLayoutManager(this)
+        list.adapter = previewAdapter
+        updateCounter()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.preview_title))
+            .setView(view)
+            .setNegativeButton(getString(R.string.close), null)
+            .show()
+    }
+
+    // ------------------------------------------------------------ in-app update
+
+    private val UPDATE_REPO = "m777m44/mahdi-file-github"
+    private val UPDATE_BRANCH = "vibe/github-uploader-553067"
+
+    private var updateSheetDialog: BottomSheetDialog? = null
+    private var downloadedApk: File? = null
+
+    private fun checkForUpdate() {
+        try {
+            getSharedPreferences("uploader_ui", MODE_PRIVATE)
+                .edit().putLong("last_resume_update_check", System.currentTimeMillis()).apply()
+        } catch (_: Exception) {
+        }
+        val client = api ?: GitHubClient("")
+        scope.launch {
+            val info = try {
+                withContext(Dispatchers.IO) { fetchLatestUpdate(client) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (info != null) showUpdateSheet(info)
+        }
+    }
+
+    private fun fetchLatestUpdate(client: GitHubClient): Triple<String, String, String>? {
+        try {
+            val rel = client.latestRelease(UPDATE_REPO)
+            if (rel != null) {
+                val tag = rel.optString("tag_name").removePrefix("v").removePrefix("V").trim()
+                if (isNewerVersion(tag, BuildConfig.VERSION_NAME)) {
+                    val assets = rel.optJSONArray("assets")
+                    if (assets != null) {
+                        for (i in 0 until assets.length()) {
+                            val asset = assets.getJSONObject(i)
+                            if (asset.optString("name").endsWith(".apk", ignoreCase = true)) {
+                                val url = asset.optString("browser_download_url")
+                                if (url.isNotEmpty()) return Triple(tag, url, asset.optString("name"))
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        }
+
+        val apkDir = client.listRepoDirectory(UPDATE_REPO, "apk", UPDATE_BRANCH)
+            ?: client.listRepoDirectory(UPDATE_REPO, "apk", null)
+            ?: return null
+        var version: String? = null
+        var url: String? = null
+        for (i in 0 until apkDir.length()) {
+            val file = apkDir.getJSONObject(i)
+            val name = file.optString("name")
+            if (!name.endsWith(".apk", ignoreCase = true)) continue
+            val v = Regex("[vV](\\d+(?:\\.\\d+)*)").find(name)?.groupValues?.get(1) ?: continue
+            val dl = file.optString("download_url")
+            if (dl.isEmpty()) continue
+            if (isNewerVersion(v, BuildConfig.VERSION_NAME) &&
+                (version == null || isNewerVersion(v, version))
+            ) {
+                version = v
+                url = dl
+            }
+        }
+        if (version != null && url != null) {
+            return Triple(version, url, "GitHubUploader-v$version.apk")
+        }
+        return null
+    }
+
+    private fun isNewerVersion(remote: String, current: String): Boolean {
+        fun parts(v: String) = v.split('.').map { it.trim().filter(Char::isDigit).toIntOrNull() ?: 0 }
+        val a = parts(remote)
+        val b = parts(current)
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val x = a.getOrElse(i) { 0 }
+            val y = b.getOrElse(i) { 0 }
+            if (x != y) return x > y
+        }
+        return false
+    }
+
+    private fun showUpdateSheet(info: Triple<String, String, String>) {
+        if (updateSheetDialog?.isShowing == true) return
+        val view = LayoutInflater.from(this).inflate(R.layout.sheet_update, null)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(view)
+        updateSheetDialog = dialog
+        downloadedApk = null
+        view.findViewById<TextView>(R.id.updateVersions).text =
+            getString(R.string.update_new_version, info.first) + "\n" +
+            getString(R.string.update_current_version, BuildConfig.VERSION_NAME)
+        val btnNow = view.findViewById<MaterialButton>(R.id.btnUpdateNow)
+        val progress = view.findViewById<LinearProgressIndicator>(R.id.updateProgress)
+        val percentLabel = view.findViewById<TextView>(R.id.updatePercent)
+        var downloading = false
+
+        view.findViewById<MaterialButton>(R.id.btnUpdateCancel).setOnClickListener { dialog.dismiss() }
+
+        btnNow.setOnClickListener {
+            val ready = downloadedApk
+            if (ready != null) {
+                installUpdate(ready)
+                return@setOnClickListener
+            }
+            if (downloading) return@setOnClickListener
+            downloading = true
+            btnNow.isEnabled = false
+            progress.isVisible = true
+            percentLabel.isVisible = true
+            progress.isIndeterminate = true
+            percentLabel.text = getString(R.string.update_downloading)
+
+            downloadUpdate(info.second, info.third,
+                onProgress = { p, done, total ->
+                    if (p >= 0) {
+                        progress.isIndeterminate = false
+                        progress.setProgressCompat(p, true)
+                        percentLabel.text = getString(
+                            R.string.update_percent, p,
+                            Formatter.formatShortFileSize(this, done),
+                            Formatter.formatShortFileSize(this, total),
+                        )
+                    }
+                },
+                onDone = { apk, err ->
+                    downloading = false
+                    if (apk != null) {
+                        downloadedApk = apk
+                        progress.isIndeterminate = false
+                        progress.setProgressCompat(100, true)
+                        percentLabel.text = getString(R.string.update_downloaded)
+                        btnNow.text = getString(R.string.update_btn_do_install)
+                        btnNow.isEnabled = true
+                        haptic()
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.update_auto_installing),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                        scope.launch {
+                            delay(700)
+                            installUpdate(apk)
+                        }
+                    } else {
+                        percentLabel.isVisible = false
+                        progress.isVisible = false
+                        btnNow.isEnabled = true
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.update_download_failed, err ?: ""),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                },
+            )
+        }
+        dialog.setOnDismissListener { updateSheetDialog = null }
+        dialog.show()
+    }
+
+    private fun downloadUpdate(
+        url: String,
+        fileName: String,
+        onProgress: (percent: Int, doneBytes: Long, totalBytes: Long) -> Unit,
+        onDone: (apk: File?, error: String?) -> Unit,
+    ) {
+        scope.launch(Dispatchers.IO) {
+            var attempt = 0
+            while (true) {
+                try {
+                    val http = GitHubClient.SHARED_HTTP
+                    http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { resp ->
+                        if (!resp.isSuccessful) {
+                            throw Exception(resp.code.toString())
+                        }
+                        val target = File(getExternalFilesDir(null), "updates")
+                            .apply { mkdirs() }
+                            .let { File(it, fileName.ifBlank { "update.apk" }) }
+                        val body = resp.body ?: throw Exception("empty body")
+                        val total = body.contentLength()
+                        var done = 0L
+                        body.byteStream().use { input ->
+                            target.outputStream().use { output ->
+                                val buf = ByteArray(64 * 1024)
+                                while (true) {
+                                    val n = input.read(buf)
+                                    if (n == -1) break
+                                    output.write(buf, 0, n)
+                                    done += n
+                                    if (total > 0) {
+                                        val p = (done * 100 / total).toInt().coerceIn(0, 100)
+                                        runOnUiThread { onProgress(p, done, total) }
+                                    }
+                                }
+                            }
+                        }
+                        runOnUiThread { onDone(target, null) }
+                    }
+                    return@launch
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (attempt < 2) {
+                        attempt++
+                        delay(3_000L)
+                        continue
+                    }
+                    runOnUiThread { onDone(null, e.message ?: e.javaClass.simpleName) }
+                    return@launch
+                }
+            }
+        }
+    }
+
+    private fun installUpdate(apk: File) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()
+        ) {
+            Toast.makeText(this, getString(R.string.update_need_permission), Toast.LENGTH_LONG).show()
+            try {
+                startActivity(
+                    Intent(
+                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName"),
+                    ),
+                )
+            } catch (_: Exception) {
+                try {
+                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES))
+                } catch (_: Exception) {
+                }
+            }
+            return
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            this, "$packageName.fileprovider", apk,
+        )
+        val intent = Intent(Intent.ACTION_INSTALL_PACKAGE)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                startActivity(
+                    Intent(Intent.ACTION_VIEW)
+                        .setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                )
+            } catch (_: Exception) {
+                Toast.makeText(this, getString(R.string.update_install_failed), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun refreshPickedSummary() {
+        val sheet = uploadSheet ?: return
+        val summary = sheet.findViewById<TextView>(R.id.pickedSummary) ?: return
+        val keys = pendingDocs.map { docKey(it) }.toSet()
+        excludedDocs.retainAll(keys)
+        // إعادة بناء: عند إفراغ القائمة تُحذف كل الاستبعدات
+        if (pendingDocs.isEmpty()) excludedDocs.clear()
+        val sb = StringBuilder()
+        if (pendingDocs.isEmpty()) {
+            sb.append(getString(R.string.nothing_picked))
+        } else {
+            val totalSize = pendingDocs.sumOf { it.size }
+            sb.append(getString(
+                R.string.picked_summary_short,
+                pendingDocs.size,
+                Formatter.formatShortFileSize(this, totalSize),
+            ))
+            sb.append('\n')
+            pendingDocs.take(15).forEach {
+                sb.append("• ").append(it.relPath)
+                    .append(" (").append(Formatter.formatShortFileSize(this, it.size)).append(")\n")
+            }
+            if (pendingDocs.size > 15) {
+                sb.append(getString(R.string.more_files, pendingDocs.size - 15)).append('\n')
+            }
+            if (excludedDocs.isNotEmpty()) {
+                sb.append(getString(R.string.excluded_note, excludedDocs.size)).append('\n')
+            }
+        }
+        if (pickErrors.isNotEmpty()) {
+            sb.append('\n').append(getString(R.string.stage_errors, pickErrors.size)).append('\n')
+            pickErrors.forEach { (name, err) -> sb.append("⚠ ").append(name).append(": ").append(err).append('\n') }
+            sb.append(getString(R.string.stage_retry_hint)).append('\n')
+        }
+        sheet.findViewById<MaterialButton>(R.id.btnPreviewFiles)?.isVisible = pendingDocs.isNotEmpty()
+        summary.text = sb.toString()
+    }
+
+    // ------------------------------------------------------------ إدارة المستودع (1.10)
+
+    /** لوحة إدارة المستودع — تُفتح بضغطة طويلة على أي مستودع */
+    private fun showManageSheet(repo: org.json.JSONObject) {
+        val fullName = repo.optString("full_name")
+        if (fullName.isEmpty()) return
+        val view = LayoutInflater.from(this).inflate(R.layout.sheet_manager, null)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(view)
+
+        view.findViewById<TextView>(R.id.managerRepoName).text =
+            getString(R.string.manager_title) + " \u2014 " + fullName
+
+        view.findViewById<MaterialButton>(R.id.btnBrowseFiles).setOnClickListener {
+            haptic()
+            dialog.dismiss()
+            showBrowserSheet(repo)
+        }
+
+        view.findViewById<MaterialButton>(R.id.btnDeleteRepo).setOnClickListener {
+            haptic(true)
+            dialog.dismiss()
+            MaterialAlertDialogBuilder(this)
+                .setTitle(getString(R.string.delete_repo_confirm_title))
+                .setMessage(getString(R.string.delete_repo_confirm_msg, fullName))
+                .setPositiveButton(getString(R.string.delete_repo_confirm_btn)) { _, _ ->
+                    val client = api ?: return@setPositiveButton
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) { client.deleteRepo(fullName) }
+                            Toast.makeText(this@MainActivity,
+                                getString(R.string.delete_repo_done, fullName),
+                                Toast.LENGTH_LONG).show()
+                            loadRepos()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            MaterialAlertDialogBuilder(this@MainActivity)
+                                .setTitle(getString(R.string.delete_failed))
+                                .setMessage(e.message ?: e.javaClass.simpleName)
+                                .setPositiveButton(getString(R.string.close), null)
+                                .show()
+                        }
+                    }
+                }
+                .setNegativeButton(getString(R.string.close), null)
+                .show()
+        }
+
+        dialog.show()
+    }
+
+    /** متصفح ملفات المستودع — تحديد فردي أو مجلدات كاملة ثم حذف في التزام واحد */
+    private class TreeEntry(val path: String, val isDir: Boolean, val size: Long)
+
+    private fun showBrowserSheet(repo: org.json.JSONObject) {
+        val fullName = repo.optString("full_name")
+        val client = api ?: return
+        val branch = repo.optString("default_branch").ifEmpty { "main" }
+
+        val view = LayoutInflater.from(this).inflate(R.layout.sheet_browser, null)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(view)
+
+        val rowsBox = view.findViewById<android.view.ViewGroup>(R.id.browserRows)
+        val scroll = view.findViewById<android.widget.ScrollView>(R.id.browserScroll)
+        val progress = view.findViewById<ProgressBar>(R.id.browserProgress)
+        val counter = view.findViewById<TextView>(R.id.browserCounter)
+        val deleteBtn = view.findViewById<MaterialButton>(R.id.btnDeleteSelected)
+        val selectAllBtn = view.findViewById<MaterialButton>(R.id.btnSelectAll)
+
+        view.findViewById<TextView>(R.id.browserTitle).text =
+            getString(R.string.browser_title) + " \u2014 " + fullName
+
+        progress.isVisible = true
+        counter.text = getString(R.string.browser_loading)
+
+        val entries = mutableListOf<TreeEntry>()
+        val selected = mutableSetOf<String>()
+        var rowSyncs = mutableListOf<() -> Unit>()
+
+        fun refreshCounter() {
+            deleteBtn.text = getString(R.string.browser_delete_selected, selected.size)
+            deleteBtn.isEnabled = selected.isNotEmpty()
+            counter.text = if (selected.isEmpty())
+                getString(R.string.browser_none_selected, entries.count { !it.isDir }.toString())
+            else getString(R.string.browser_selected, selected.size)
+        }
+
+        suspend fun buildRows() = withContext(Dispatchers.Main) {
+            for (entry in entries.sortedWith(
+                compareBy({ !it.isDir }, { it.path.lowercase(Locale.ROOT) })
+            )) {
+                val row = LayoutInflater.from(this@MainActivity)
+                    .inflate(R.layout.item_browser_row, rowsBox, false)
+                val icon = row.findViewById<TextView>(R.id.rowIcon)
+                val pathv = row.findViewById<TextView>(R.id.rowPath)
+                val meta = row.findViewById<TextView>(R.id.rowMeta)
+                val check = row.findViewById<android.widget.CheckBox>(R.id.rowCheck)
+
+                fun childFiles(folder: TreeEntry): List<String> =
+                    entries.filter { !it.isDir && it.path.startsWith(folder.path + "/") }
+                        .map { it.path }
+
+                fun toggle() {
+                    haptic()
+                    if (entry.isDir) {
+                        val ch = childFiles(entry)
+                        val all = ch.isNotEmpty() && ch.all { it in selected }
+                        if (all) selected.removeAll(ch.toSet()) else selected.addAll(ch)
+                    } else {
+                        if (entry.path in selected) selected.remove(entry.path)
+                        else selected.add(entry.path)
+                    }
+                    for (sync in rowSyncs) sync()
+                    refreshCounter()
+                }
+
+                fun syncState() {
+                    if (entry.isDir) {
+                        val ch = childFiles(entry)
+                        val all = ch.isNotEmpty() && ch.all { it in selected }
+                        val some = ch.any { it in selected }
+                        check.isChecked = all
+                        check.alpha = if (!all && some) 0.7f else 1f
+                    } else {
+                        check.isChecked = entry.path in selected
+                    }
+                }
+                rowSyncs.add(::syncState)
+
+                icon.text = if (entry.isDir) "\ud83d\udcc1" else "\ud83d\udcc4"
+                pathv.text = if (entry.isDir) entry.path
+                else entry.path.substringBeforeLast('/') + "/ \u200e" + entry.path.substringAfterLast('/')
+                meta.text = if (entry.isDir)
+                    getString(R.string.repo_meta_num,
+                        entries.count { !it.isDir && it.path.startsWith(entry.path + "/") })
+                else Formatter.formatShortFileSize(this@MainActivity, entry.size)
+
+                row.setOnClickListener { toggle() }
+                check.setOnClickListener { toggle() }
+                rowsBox.addView(row)
+            }
+        }
+
+        scope.launch {
+            try {
+                val tree = withContext(Dispatchers.IO) { client.listTree(fullName, branch) }
+                for (i in 0 until tree.length()) {
+                    val o = tree.getJSONObject(i)
+                    val type = o.optString("type")
+                    val path = o.optString("path")
+                    if (path.isEmpty()) continue
+                    if (type == "tree") entries.add(TreeEntry(path, true, 0))
+                    else if (type == "blob") entries.add(TreeEntry(path, false, o.optLong("size")))
+                }
+                withContext(Dispatchers.Main) {
+                    progress.isVisible = false
+                    if (entries.isEmpty()) {
+                        counter.text = getString(R.string.browser_empty)
+                        return@withContext
+                    }
+                    scroll.isVisible = true
+                    counter.isVisible = true
+                    selectAllBtn.isVisible = true
+                    buildRows()
+                    refreshCounter()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    counter.text = getString(R.string.load_failed, e.message ?: "")
+                    progress.isVisible = false
+                }
+            }
+        }
+
+        selectAllBtn.setOnClickListener {
+            haptic()
+            val allFiles = entries.filter { !it.isDir }.map { it.path }
+            if (selected.containsAll(allFiles)) selected.clear() else selected.addAll(allFiles)
+            for (sync in rowSyncs) sync()
+            refreshCounter()
+        }
+
+        deleteBtn.setOnClickListener {
+            haptic(true)
+            if (selected.isEmpty()) return@setOnClickListener
+            val count = selected.size
+            MaterialAlertDialogBuilder(this)
+                .setTitle(getString(R.string.browser_confirm_title))
+                .setMessage(getString(R.string.browser_confirm_msg, count, fullName))
+                .setPositiveButton(getString(R.string.delete_repo_confirm_btn)) { _, _ ->
+                    val paths = selected.toList()
+                    val c = api ?: return@setPositiveButton
+                    deleteBtn.isEnabled = false
+                    progress.isVisible = true
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                c.deletePathsRobust(fullName, branch, paths)
+                            }
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@MainActivity,
+                                    getString(R.string.browser_deleted, paths.size),
+                                    Toast.LENGTH_LONG).show()
+                            }
+                            dialog.dismiss()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                MaterialAlertDialogBuilder(this@MainActivity)
+                                    .setTitle(getString(R.string.delete_failed))
+                                    .setMessage(e.message ?: e.javaClass.simpleName)
+                                    .setPositiveButton(getString(R.string.close), null)
+                                    .show()
+                                progress.isVisible = false
+                                deleteBtn.isEnabled = true
+                            }
+                        }
+                    }
+                }
+                .setNegativeButton(getString(R.string.close), null)
+                .show()
+        }
+
+        dialog.show()
+    }
+
+    // ------------------------------------------------------------ مشاركة سريعة (1.10 — من سكربت raf3ly)
+
+    private var shareJob: kotlinx.coroutines.Job? = null
+
+    private fun showShareSheet() {
+        try {
+            showShareSheetInner()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // حماية نهائية: لا انهيار أبداً — رسالة عربية واضحة فقط
+            Toast.makeText(this,
+                "\u26a0\ufe0f تعذر فتح شاشة المشاركة: ${e.message ?: e.javaClass.simpleName}",
+                Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showShareSheetInner() {
+        newStagingDir()
+        val view = LayoutInflater.from(this).inflate(R.layout.sheet_share, null)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(view)
+
+        val hostSpinner = view.findViewById<com.google.android.material.textfield.MaterialAutoCompleteTextView>(R.id.shareHostSpinner)
+        val hostInfo = view.findViewById<TextView>(R.id.shareHostInfo)
+        val filesSummary = view.findViewById<TextView>(R.id.shareFilesSummary)
+        val pickBtn = view.findViewById<MaterialButton>(R.id.btnSharePick)
+        val startBtn = view.findViewById<MaterialButton>(R.id.btnShareStart)
+        val progress = view.findViewById<LinearProgressIndicator>(R.id.shareProgress)
+        val status = view.findViewById<TextView>(R.id.shareStatus)
+        val resultsBox = view.findViewById<android.view.ViewGroup>(R.id.shareResults)
+
+        // زر تبديل الوجهة في نفس المكان أعلى الورقة — مثل raf3ly
+        view.findViewById<MaterialButton>(R.id.btnModeDirect).isChecked = true
+        view.findViewById<MaterialButton>(R.id.btnModeGithub).setOnClickListener {
+            haptic()
+            dialog.dismiss()
+            switchToGithubUpload()
+        }
+
+        val hosts = ShareHosts.ALL
+        val names = hosts.map { "${it.name} (${it.domain})" }
+        // إصلاح الانهيار: setSimpleItems يتطلب أندرويد 11+ — ArrayAdapter يعمل على كل الأجهزة
+        val spinnerAdapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_list_item_1, names,
+        )
+        hostSpinner.setAdapter(spinnerAdapter)
+        hostSpinner.setText(names[0], false)
+        var chosen = hosts[0]
+        val syncInfo = {
+            hostInfo.text = "\u23f3 ${chosen.life} \u2022 ${chosen.domain}" +
+                (if (chosen.maxSizeMB > 0) " \u2022 الحد ${chosen.maxSizeMB}MB" else "")
+        }
+        hostSpinner.setOnItemClickListener { _, _, pos, _ ->
+            chosen = hosts[pos]
+            syncInfo()
+        }
+        syncInfo()
+
+        sharePickCb = { uris ->
+            scope.launch {
+                val staged = mutableListOf<Pending>()
+                withContext(Dispatchers.IO) {
+                    for (uri in uris) {
+                        persistPermission(uri)
+                        val name = displayName(uri)
+                        try {
+                            val f = stageDocument(uri, name)
+                            staged.add(Pending(f, Kind.FILE, name, f.length()))
+                        } catch (_: Exception) { }
+                    }
+                }
+                shareFiles.clear()
+                shareFiles.addAll(staged)
+                filesSummary.isVisible = staged.isNotEmpty()
+                filesSummary.text = getString(
+                    R.string.share_files_summary,
+                    staged.joinToString(" ، ") { it.relPath },
+                )
+                startBtn.isEnabled = staged.isNotEmpty()
+            }
+        }
+
+        pickBtn.setOnClickListener {
+            haptic()
+            sharePick.launch(arrayOf("*/*"))
+        }
+
+        dialog.setOnDismissListener {
+            sharePickCb = null
+            shareJob?.cancel()
+            shareJob = null
+        }
+
+        startBtn.setOnClickListener {
+            haptic()
+            if (shareFiles.isEmpty()) {
+                Toast.makeText(this, getString(R.string.share_pick_first), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            shareJob?.cancel()
+            shareJob = scope.launch {
+                startBtn.isEnabled = false
+                resultsBox.removeAllViews()
+                resultsBox.isVisible = true
+                progress.isVisible = true
+                var ok = 0
+                val links = mutableListOf<String>()
+                for (doc in shareFiles) {
+                    status.isVisible = true
+                    try {
+                        val result = withContext(Dispatchers.IO) {
+                            ShareHosts.upload(
+                                chosen, doc.stagedFile, doc.relPath,
+                                "application/octet-stream",
+                            ) { bytes, total ->
+                                runOnUiThread {
+                                    if (total > 0) {
+                                        val pct = ((bytes * 100) / total).toInt().coerceIn(0, 100)
+                                        progress.setProgressCompat(pct, true)
+                                        status.text = getString(
+                                            R.string.share_percent, pct,
+                                            Formatter.formatShortFileSize(this@MainActivity, bytes),
+                                            Formatter.formatShortFileSize(this@MainActivity, total),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        ok++
+                        links.add(result.url)
+                        status.text = getString(R.string.share_done_item, doc.relPath, result.url)
+
+                        val card = LayoutInflater.from(this@MainActivity)
+                            .inflate(R.layout.item_share_result, resultsBox, false)
+                        card.findViewById<TextView>(R.id.resultUrl).text = result.url
+                        card.findViewById<TextView>(R.id.resultName).text =
+                            "${doc.relPath} \u2014 ${result.hostName} (${result.life})"
+                        card.findViewById<MaterialButton>(R.id.btnCopyLink).setOnClickListener {
+                            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("url", result.url))
+                            Toast.makeText(this@MainActivity,
+                                getString(R.string.share_copied), Toast.LENGTH_SHORT).show()
+                            haptic()
+                        }
+                        card.findViewById<MaterialButton>(R.id.btnSendLink).setOnClickListener {
+                            val send = Intent(Intent.ACTION_SEND)
+                            send.type = "text/plain"
+                            send.putExtra(Intent.EXTRA_TEXT, "${doc.relPath}\n${result.url}")
+                            startActivity(
+                                Intent.createChooser(send, getString(R.string.share_btn_send)))
+                        }
+                        resultsBox.addView(card)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        status.text =
+                            "\u26a0\ufe0f ${doc.relPath}: ${e.message ?: e.javaClass.simpleName}"
+                    }
+                }
+                progress.isVisible = false
+                status.text = getString(R.string.share_all_done, ok, shareFiles.size) +
+                    if (links.size == 1) "\n\n${links[0]}" else ""
+                startBtn.isEnabled = true
+                haptic(true)
+            }
+        }
+
+        dialog.show()
+    }
+
+    /** التبديل من الرابط المباشر إلى رفع GitHub — يفتح ورقة الرفع بأول مستودع متاح */
+    private fun switchToGithubUpload() {
+        val repo = repos.firstOrNull()
+        if (repo == null) {
+            Toast.makeText(this, getString(R.string.need_repo_for_github), Toast.LENGTH_LONG).show()
+            return
+        }
+        openUploadSheet(repo)
+    }
+
+    private fun openUploadSheet(repo: org.json.JSONObject) {
+        pendingDocs.clear()
+        pickErrors.clear()
+        zipAsIs = false
+        newStagingDir()
+
+        val view = LayoutInflater.from(this).inflate(R.layout.sheet_upload, null)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(view)
+        uploadSheet = dialog
+
+        // زر تبديل الوجهة في نفس المكان أعلى الورقة — مثل raf3ly
+        view.findViewById<MaterialButton>(R.id.btnModeGithub).isChecked = true
+        view.findViewById<MaterialButton>(R.id.btnModeDirect).setOnClickListener {
+            haptic()
+            dialog.dismiss()
+            openShareCenterSafely()
+        }
+
+        val repoInput = view.findViewById<EditText>(R.id.uploadRepoInput)
+        val branchInput = view.findViewById<EditText>(R.id.uploadBranchInput)
+        val prefixInput = view.findViewById<EditText>(R.id.uploadPrefixInput)
+        val messageInput = view.findViewById<EditText>(R.id.uploadMessageInput)
+        val zipModeGroup = view.findViewById<RadioGroup>(R.id.zipModeGroup)
+        val zipModeRow = view.findViewById<View>(R.id.zipModeRow)
+        val progress = view.findViewById<LinearProgressIndicator>(R.id.uploadProgress)
+        val progressLabel = view.findViewById<TextView>(R.id.progressLabel)
+        val uploadBtn = view.findViewById<MaterialButton>(R.id.btnUpload)
+        val allInputs = listOf(repoInput, branchInput, prefixInput, messageInput)
+
+        repoInput.setText(repo.optString("full_name"))
+        branchInput.hint = getString(R.string.default_branch_hint, repo.optString("default_branch"))
+
+        fun updateZipRow() {
+            zipModeRow.isVisible = pendingDocs.any { it.kind == Kind.ZIP }
+        }
+        updateZipRow()
+
+        view.findViewById<MaterialButton>(R.id.btnPickFiles).setOnClickListener {
+            pickFiles.launch(arrayOf("*/*"))
+        }
+        view.findViewById<MaterialButton>(R.id.btnPickFolder).setOnClickListener {
+            pickFolder.launch(null)
+        }
+        view.findViewById<MaterialButton>(R.id.btnPickZip).setOnClickListener {
+            pickZip.launch(arrayOf("application/zip", "application/x-zip-compressed"))
+        }
+        view.findViewById<MaterialButton>(R.id.btnAdvancedToggle).setOnClickListener { btn ->
+            val box = view.findViewById<View>(R.id.advancedBox)
+            val show = !box.isVisible
+            if (show) {
+                // ظهور ناعم: شفافية + انزلاق بسيط من الأعلى (بدون تقطيع)
+                box.alpha = 0f
+                box.translationY = -14f
+                box.isVisible = true
+                box.animate()
+                    .alpha(1f).translationY(0f)
+                    .setDuration(190L)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f))
+                    .start()
+            } else {
+                // إخفاء ناعم ثم طيّ فعلي بعد انتهاء الحركة
+                box.animate()
+                    .alpha(0f).translationY(-10f)
+                    .setDuration(150L)
+                    .setInterpolator(android.view.animation.AccelerateInterpolator(1.4f))
+                    .withEndAction { box.isVisible = false }
+                    .start()
+            }
+            haptic()
+        }
+        view.findViewById<MaterialButton>(R.id.btnPickUrl).setOnClickListener {
+            showUrlDownloadDialog(view)
+        }
+        zipModeGroup.setOnCheckedChangeListener { _, _ ->
+            zipAsIs = view.findViewById<RadioButton>(R.id.zipAsIs).isChecked
+        }
+
+        view.findViewById<MaterialButton>(R.id.btnPreviewFiles).setOnClickListener {
+            if (pendingDocs.isEmpty()) {
+                Toast.makeText(this, getString(R.string.pick_files_first), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            showFilesPreviewDialog()
+        }
+        view.findViewById<MaterialButton>(R.id.btnSuggestMsg).setOnClickListener {
+            val paths = pendingDocs.map { it.relPath }
+            if (messageInput.text.isNullOrBlank()) {
+                messageInput.setText(SecurityUtils.suggestCommitMessage(paths))
+            }
+        }
+
+        uploadBtn.setOnClickListener {
+            val repoFull = repoInput.text.toString().trim()
+            if (repoFull.isEmpty() || '/' !in repoFull) {
+                Toast.makeText(this, getString(R.string.pick_repo_first), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            if (pendingDocs.isEmpty()) {
+                Toast.makeText(this, getString(R.string.pick_files_first), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val client = api ?: return@setOnClickListener
+            val branch = branchInput.text.toString().trim()
+            val prefix = UploadEngine.cleanPath(prefixInput.text.toString().trim())
+            val message = messageInput.text.toString().trim()
+            val snapshot = pendingDocs.filter { docKey(it) !in excludedDocs }
+            if (snapshot.isEmpty()) {
+                Toast.makeText(this, getString(R.string.all_excluded_toast), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            uploadBtn.isEnabled = false
+            allInputs.forEach { it.isEnabled = false }
+            progress.isVisible = true
+
+            fun resetSheet() {
+                uploadBtn.isEnabled = true
+                allInputs.forEach { it.isEnabled = true }
+                progress.isVisible = false
+                progressLabel.text = ""
+            }
+
+            fun startUpload(
+                items: List<UploadEngine.Item>,
+                actualRepo: org.json.JSONObject,
+                targetBranch: String,
+            ) {
+                scope.launch {
+                    try {
+                        val startAt = System.currentTimeMillis()
+                        val result = UploadEngine.upload(
+                            client, repoFull, targetBranch, items, message,
+                        ) { done, total, current, bytesDone ->
+                            val elapsedMs = System.currentTimeMillis() - startAt
+                            val elapsedSec = (elapsedMs / 1000).toInt()
+                            val mm = (elapsedSec / 60).toString().padStart(2, '0')
+                            val ss = (elapsedSec % 60).toString().padStart(2, '0')
+                            val speed = if (elapsedMs >= 700) bytesDone / (elapsedMs / 1000.0) / (1024.0 * 1024.0) else 0.0
+                            val speedTxt = if (speed >= 0.1) String.format(Locale.US, " \u2022 %.1f MB/s", speed) else ""
+                            scope.launch {
+                                progress.progress = (done * 100 / total.coerceAtLeast(1))
+                                progressLabel.text = getString(R.string.upload_progress_count, done, total, "$mm:$ss") + speedTxt + "\n" + current
+                            }
+                        }
+
+                        ActivityLog.log(
+                            this@MainActivity, repoFull, targetBranch,
+                            result.uploaded.size, result.failed.size,
+                        )
+                        haptic(result.failed.isEmpty())
+                        val summary = buildString {
+                            append(getString(R.string.upload_done, result.uploaded.size, repoFull, targetBranch))
+                            if (result.commits > 0) append("\n").append(getString(R.string.commits_count, result.commits))
+                            if (result.failed.isNotEmpty()) {
+                                append("\n\n").append(getString(R.string.failed_files, result.failed.size))
+                                result.failed.take(10).forEach { (path, err) ->
+                                    append("\n• ").append(path).append(" — ").append(err)
+                                }
+                            }
+                        }
+                        MaterialAlertDialogBuilder(this@MainActivity)
+                            .setTitle(getString(R.string.upload_result_title))
+                            .setMessage(summary)
+                            .setPositiveButton(getString(R.string.open_repo)) { _, _ ->
+                                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(actualRepo.optString("html_url"))))
+                            }
+                            .setNeutralButton(getString(R.string.copy_report)) { _, _ ->
+                                val cm = getSystemService(ClipboardManager::class.java)
+                                cm?.setPrimaryClip(ClipData.newPlainText("report", summary))
+                                Toast.makeText(this@MainActivity, getString(R.string.copied), Toast.LENGTH_SHORT).show()
+                            }
+                            .setNegativeButton(getString(R.string.close), null)
+                            .show()
+                        dialog.dismiss()
+                        loadRepos()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (t: Throwable) {
+                        MaterialAlertDialogBuilder(this@MainActivity)
+                            .setTitle(getString(R.string.upload_failed_title))
+                            .setMessage(t.message ?: t.javaClass.simpleName)
+                            .setPositiveButton(getString(R.string.close), null)
+                            .show()
+                    } finally {
+                        resetSheet()
+                    }
+                }
+            }
+
+            scope.launch {
+                try {
+                    val actualRepo = withContext(Dispatchers.IO) { client.getRepo(repoFull) }
+                    val targetBranch = branch.ifEmpty { actualRepo.optString("default_branch") }
+
+                    val items = mutableListOf<UploadEngine.Item>()
+                    for (doc in snapshot) {
+                        when (doc.kind) {
+                            Kind.FILE -> {
+                                val path = if (prefix.isEmpty()) doc.relPath else "${prefix}/${doc.relPath}"
+                                val f = doc.stagedFile
+                                items.add(UploadEngine.Item(path, f.length(), f))
+                            }
+                            Kind.ZIP -> {
+                                if (zipAsIs) {
+                                    val path = if (prefix.isEmpty()) doc.relPath else "${prefix}/${doc.relPath}"
+                                    val f = doc.stagedFile
+                                    items.add(UploadEngine.Item(path, f.length(), f))
+                                } else {
+                                    val workDir = File(dirStaging(), "zipwork_${System.nanoTime()}").apply { mkdirs() }
+                                    val extracted = withContext(Dispatchers.IO) {
+                                        UploadEngine.extractZipFile(doc.stagedFile, doc.relPath, workDir)
+                                    }
+                                    for (item in extracted) {
+                                        items.add(UploadEngine.Item(
+                                            if (prefix.isEmpty()) item.path else "${prefix}/${item.path}",
+                                            item.size,
+                                            item.file,
+                                        ))
+                                    }
+                                }
+                            }
+                            Kind.FOLDER -> {}
+                        }
+                    }
+
+                    // 1.9.4: رفع بدون فحص — كل الملفات تُرفع مباشرة دون استثناء ودون توقف
+                    startUpload(items, actualRepo, targetBranch)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    MaterialAlertDialogBuilder(this@MainActivity)
+                        .setTitle(getString(R.string.upload_failed_title))
+                        .setMessage(t.message ?: t.javaClass.simpleName)
+                        .setPositiveButton(getString(R.string.close), null)
+                        .show()
+                    resetSheet()
+                }
+            }
+        }
+
+        dialog.setOnDismissListener {
+            uploadSheet = null
+        }
+        dialog.show()
+        refreshPickedSummary()
+    }
+}
+
+class RepoAdapter(
+    private var source: List<org.json.JSONObject>,
+    private val onClick: (org.json.JSONObject) -> Unit,
+    private val onLongClick: (org.json.JSONObject) -> Unit,
+) : RecyclerView.Adapter<RepoAdapter.Holder>() {
+
+    private var shown: List<org.json.JSONObject> = source
+
+    class Holder(val root: View) : RecyclerView.ViewHolder(root) {
+        val name: TextView = root.findViewById(R.id.repoName)
+        val badge: TextView = root.findViewById(R.id.repoBadge)
+        val desc: TextView = root.findViewById(R.id.repoDesc)
+        val meta: TextView = root.findViewById(R.id.repoMeta)
+        val upload: MaterialButton = root.findViewById(R.id.btnUploadSmall)
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_repo, parent, false)
+        return Holder(view)
+    }
+
+    override fun getItemCount(): Int = shown.size
+
+    override fun onBindViewHolder(holder: Holder, position: Int) {
+        val repo = shown[position]
+        holder.name.text = repo.optString("full_name")
+        holder.badge.text = if (repo.optBoolean("private"))
+            holder.root.context.getString(R.string.badge_private)
+        else holder.root.context.getString(R.string.badge_public)
+        holder.desc.text = repo.optString("description")
+            .ifEmpty { holder.root.context.getString(R.string.no_desc) }
+        val updated = repo.optString("updated_at").take(10)
+        holder.meta.text = holder.root.context.getString(
+            R.string.repo_meta, repo.optString("default_branch"), updated,
+        )
+        holder.root.setOnClickListener { onClick(repo) }
+        holder.root.setOnLongClickListener { v ->
+            onLongClick(repo)
+            hapticCompat(v)
+            true
+        }
+        holder.upload.setOnClickListener { onClick(repo) }
+        holder.upload.setOnLongClickListener { v ->
+            onLongClick(repo)
+            hapticCompat(v)
+            true
+        }
+    }
+
+    companion object {
+        fun hapticCompat(v: View) {
+            try {
+                (v.context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+                    ?.vibrate(12L)
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun filter(query: String) {
+        val q = query.trim().lowercase(Locale.ROOT)
+        shown = if (q.isEmpty()) source
+        else source.filter {
+            it.optString("full_name").lowercase(Locale.ROOT).contains(q) ||
+                it.optString("description").lowercase(Locale.ROOT).contains(q)
+        }
+        notifyDataSetChanged()
+    }
+
+    fun replace(newList: List<org.json.JSONObject>) {
+        source = newList
+        shown = newList
+        notifyDataSetChanged()
+    }
+}

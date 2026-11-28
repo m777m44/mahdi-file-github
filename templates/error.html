@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}خطأ — GitHub Uploader{% endblock %}
+{% block content %}
+<section class="card center-card">
+  <h1>حدث خطأ</h1>
+  <p class="muted">{{ message }}</p>
+  <a class="btn btn-primary" href="{{ url_for('index') }}">الرجوع لتسجيل الدخول</a>
+</section>
+{% endblock %}

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- شرائح خلفية الإحصائيات: مدموجة من أساس التدرج + طبقة عمق 3D -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/gradient_header" />
+    <item android:drawable="@drawable/hero_depth" />
+</layer-list>
