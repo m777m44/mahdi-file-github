@@ -150,7 +150,7 @@
                 android:layout_weight="1"
                 android:text="@string/sc_pick_images"
                 android:textSize="13sp"
-                app:backgroundTint="#7C4DFF"
+                app:backgroundTint="#1B6EF3"
                 app:cornerRadius="14dp" />
 
             <com.google.android.material.button.MaterialButton

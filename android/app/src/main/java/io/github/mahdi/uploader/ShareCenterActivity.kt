@@ -254,7 +254,7 @@ class ShareCenterActivity : AppCompatActivity() {
                 // إبراز البطاقة المختارة يدوياً بلون أخضر
                 for (i in 0 until box.childCount) {
                     val mark = box.getChildAt(i).findViewById<TextView>(R.id.hostSelectMark)
-                    mark.setTextColor(if (i == box.indexOfChild(card)) 0xFF3FB950.toInt() else 0xFF30363D.toInt())
+                    mark.setTextColor(if (i == box.indexOfChild(card)) 0xFF17B890.toInt() else 0xFF24335C.toInt())
                 }
             }
             box.addView(card)
@@ -268,7 +268,7 @@ class ShareCenterActivity : AppCompatActivity() {
             // إبراز البطاقة المختارة سابقاً
             if (!autoPick && host.id == chosenHost.id) {
                 val mark = card.findViewById<TextView>(R.id.hostSelectMark)
-                mark.setTextColor(0xFF3FB950.toInt())
+                mark.setTextColor(0xFF17B890.toInt())
             }
         }
     }
